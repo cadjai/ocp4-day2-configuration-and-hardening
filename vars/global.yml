@@ -1,0 +1,185 @@
+---
+registry_host_fqdn: '{{ vault_registry_host_fqdn }}'
+local_repository: 'openshift4/custom-operators'
+
+openshift_cli: '/usr/bin/oc'
+ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
+ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
+ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
+ocp_cluster_console_port: '6443'
+
+staging_dir: '/tmp'
+disconnected_operatorhub_config: 'patched-operatorhub.yml'
+disconnected_catalog_source_config: 'catalog-source-config.yml'
+
+configure_disconnected_OLM: 'false'
+
+operator_catalogs_to_deploy:
+  redhat-operators:
+    catalog_name: 'custom-redhat-operator-catalog'
+    catalog_index: 'redhat-operator-index'
+    catalog_index_tag: 'v4.6'
+    catalog_publisher: 'redhat'
+    content_source_file: '/repos/ocp4/artifactory_content_mirror/redhat-operator-index-manifests/imageContentSourcePolicy.yaml'
+    mirror: "true"
+  community-operators:
+    catalog_name: 'community-redhat-operator-catalog'
+    catalog_index: 'community-operator-index'
+    catalog_index_tag: 'latest'
+    catalog_publisher: 'community'
+    content_source_file: '/repos/ocp4/artifactory_content_mirror/community-operator-index-manifests/imageContentSourcePolicy.yaml'
+    mirror: "true"
+  market-operators:
+    catalog_name: ''
+    catalog_index: ''
+    catalog_index_tag: ''
+    catalog_publisher: ''
+    content_source_file: ''
+    mirror: "false"
+  certified-operators:
+    catalog_name: 'certified-redhat-operator-catalog'
+    catalog_index: 'certified-operator-index'
+    catalog_index_tag: 'v4.6'
+    catalog_publisher: 'certified'
+    content_source_file: '/repos/ocp4/artifactory_content_mirror/certified-operator-index-manifests/imageContentSourcePolicy.yaml'
+    mirror: "false"
+
+operators_to_deploy:
+  group-sync-operator:
+    group_name: 'group-sync-operator-group'
+    catalog_name: 'community-redhat-operator-catalog'
+    sub_channel: '4.6'
+    deploy_namespace: 'group-sync-operator'  ## used for where the operator is deployed
+    target_namespace: 'group-sync-operator'  ## used for the scope of operator
+    deploy_namespace_description: 'group-sync-operator'
+    deploy: 'false'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'false'
+
+  file-integrity-operator:
+    group_name: 'file-integrity-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: '4.6'
+    deploy_namespace: 'openshift-file-integrity'
+    target_namespace: 'openshift-file-integrity' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-file-integrity'
+    deploy: 'false'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.6'
+
+  compliance-operator:
+    group_name: 'compliance-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    #catalog_name: 'compliance-operator'  ### this can be set to a different name if creating the catalog. If not use one of the main indices.
+    sub_channel: '4.6'
+    deploy_namespace: 'openshift-compliance'
+    target_namespace: 'openshift-compliance'
+    deploy_namespace_description: 'openshift-compliance'
+    deploy: 'false'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.6'
+
+  koku-metrics-operator:
+    group_name: 'koku-metrics-operator-group'
+    catalog_name: 'community-redhat-operator-catalog'
+    sub_channel: 'alpha'
+    deploy_namespace: 'koku-metrics-operator' ### values are all, empty or list of ns names
+    target_namespace: 'koku-metrics-operator'
+    deploy_namespace_description: 'koku-metrics-operator'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'community-operator-index'
+    index_image_tag: 'latest'
+
+  prometheus-operator:
+    group_name: 'prometheus-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: '4.6'
+    target_namespace: 'openshift-monitoring' ### values are all, empty or list of ns names
+    deploy_namespace: 'openshift-monitoring'
+    deploy_namespace_description: 'openshift-monitoring'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.6'
+    create_configmap: 'true'
+    configmap_template: 'templates/cluster-monitoring-config.yml.j2'
+    retention: '24h'
+
+  namespace-configuration-operator:
+    group_name: 'namespace-configuration-operator-group'
+    catalog_name: 'community-redhat-operator-catalog'
+    sub_channel: 'alpha'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace: 'namespace-configuration-operator'
+    deploy_namespace_description: 'namespace-configuration-operator'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'community-operator-index'
+    index_image_tag: 'latest'
+
+  elasticsearch-operator:
+    group_name: 'elasticsearch-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: '4.6'
+    deploy_namespace: 'openshift-operators-redhat'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-operators-redhat'
+    deploy: 'false'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.6'
+    create_rolebinding: 'true'
+    rolebindingconfig: 'templates/elasticsearch-rolebinding.yml'
+
+  cluster-logging:
+    group_name: 'cluster-logging-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: '4.6'
+    deploy_namespace: 'openshift-logging'
+    target_namespace: 'openshift-logging'  ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-logging'
+    deploy: 'false'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true", "openshift.io/cluster-logging": "true"}'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    create_customresource: 'true'
+    customresource_template: 'templates/cluster-logging-customresource.yml.j2'
+    es_node_count: 3
+    es_pv_size: '200G'
+    es_storageclass: ''
+    es_maxage_app: '1d'
+    es_maxage_infra: '7d'
+    es_maxage_audit: '7d'
+    es_memory: '32Gi'
+    es_proxy_memory_request: '1Gi'
+    es_proxy_memory_limit: '1Gi'
+    es_apply_toleration: 'true'
+    es_apply_nodeselector: 'true'
+
+
+#####################################################################################################
+# End of user configurable variables
+#####################################################################################################
+
+

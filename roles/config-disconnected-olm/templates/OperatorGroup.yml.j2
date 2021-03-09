@@ -1,0 +1,12 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup 
+metadata:
+  name: {{ operator_group_name }}
+  namespace: {{ operator_deploy_namespace | d('openshift-operators') }} 
+spec:
+{% if operator_target_namespace is defined and operator_target_namespace == 'all' %}
+  targetNamespaces: []
+{% else %}
+  targetNamespaces:
+    - {{ operator_target_namespace | d('openshift-operators') }}
+{% endif %}

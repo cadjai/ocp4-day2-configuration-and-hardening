@@ -1,0 +1,331 @@
+---
+- name: '{{ ansible_name_module }} | Deploy Operators'
+  block:
+    ##### Adding this to bypass restrictions on creating project with names starting with openshift  #####
+    - name: '{{ ansible_name_module }} | Deploy Operators | Create Operator Namespace'
+      command: >
+        {{ openshift_cli }} create namespace '{{ item.value.deploy_namespace }}' 
+      failed_when: "operator_ns_created.rc >=1 and not ' already exists' in operator_ns_created.stderr"
+      with_dict: "{{ operators_to_deploy }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.group_name is defined and item.value.group_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.create_namespace is defined and item.value.create_namespace | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - "'openshift' in item.value.deploy_namespace"
+      register: operator_ns_created
+
+    - name: '{{ ansible_name_module }} | Deploy Operators | Create Operator Namespace'
+      command: >
+        {{ openshift_cli }} new-project '{{ item.value.deploy_namespace }}' \
+          --display-name='{{ item.value.deploy_namespace_description }}' \
+          --description='{{ item.value.deploy_namespace_description }}'
+      failed_when: "operator_ns_created.rc >=1 and not ' already exists' in operator_ns_created.stderr"
+      with_dict: "{{ operators_to_deploy }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.group_name is defined and item.value.group_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.create_namespace is defined and item.value.create_namespace | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.deploy_namespace_description is defined and item.value.deploy_namespace_description != ""
+        - "not 'openshift' in item.value.deploy_namespace"
+      register: operator_ns_created
+
+################## Patch Namespace if applicable (e.g. add labels) #####################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add labels'
+      command: >
+        {{ openshift_cli }} patch namespace {{ item.value.deploy_namespace }} --type merge -p '{"metadata":{"labels": {{ item.value.patch_namespace_labels }} }}'
+      with_dict: "{{ operators_to_deploy }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.patch_namespace is defined and item.value.patch_namespace | bool 
+        - item.value.patch_namespace_labels is defined and item.value.patch_namespace_labels != ""
+      register: operator_ns_patched
+
+################## Deploy RoleBinding if applicable #####################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | create rolebinding'
+      command: >
+        {{ openshift_cli }} apply -f {{ item.value.rolebindingconfig }} -n {{ item.value.deploy_namespace }} 
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.create_rolebinding is defined and item.value.create_rolebinding | bool 
+        - item.value.rolebindingconfig is defined and item.value.rolebindingconfig != ""
+      register: operator_rb_deployed
+
+################## Verify if OperatorGroup exists if applicable #####################
+    - name: '{{ ansible_name_module }} | Deploy Operators | Check if Operator group already exist'
+      shell: >
+        {{ openshift_cli }} get OperatorGroup --all-namespaces --no-headers | grep '{{ item.value.deploy_namespace }}' | grep  '{{ item.value.group_name }}'
+      ignore_errors: yes
+      failed_when:
+        - operator_group_exist.rc > 1
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.group_name is defined and item.value.group_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.deploy_namespace_description is defined and item.value.deploy_namespace_description != ""
+      register: operator_group_exist
+
+    - name: '{{ ansible_name_module }} | Deploy Operators | Check if Operator group already exist'
+      set_fact:
+        op_group_exist: "{{ op_group_exist | d({}) | combine({ item.item.key: 'false' if item.rc == 0 else 'true' }) }}"
+      with_items: "{{ operator_group_exist.results }}"
+      when:
+        - not item.skipped is defined
+      register: op_group_fact
+
+################## Deploy OperatorGroup if applicable #####################
+    - name: '{{ ansible_name_module }} | template | Copy OperatorGroup Config to staging location'
+      template: 
+        src: "templates/OperatorGroup.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item.key }}-OperatorGroup.yml"
+        force: yes
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.group_name is defined and item.value.group_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.deploy_namespace_description is defined and item.value.deploy_namespace_description != ""
+        - item.value.create_catalog_group is defined and item.value.create_catalog_group | bool
+        - op_group_exist[item.key] is defined and op_group_exist[item.key] | bool
+      vars: 
+        operator_group_name: "{{ item.value.group_name }}"
+        operator_deploy_namespace: "{{ item.value.deploy_namespace }}"
+        operator_target_namespace: "{{ item.value.target_namespace }}"
+        operator_name: "{{ item.key }}"
+      register: op_csc_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operatorgroup '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item.key }}-OperatorGroup.yml 
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.group_name is defined and item.value.group_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.deploy_namespace_description is defined and item.value.deploy_namespace_description != ""
+        - item.value.create_catalog_group is defined and item.value.create_catalog_group | bool
+        - op_group_exist[item.key] is defined and op_group_exist[item.key] | bool
+      register: op_csc_deployed
+
+
+################## Deploy custom CatalogSource if applicable #####################
+    - name: '{{ ansible_name_module }} | template | Copy Operator Catalog Source to staging location if applicable'
+      template: 
+        src: "templates/CatalogSource.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item.key }}-CatalogSource.yml"
+        force: yes
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.catalog_name is defined and item.value.catalog_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.create_catalog is defined and item.value.create_catalog | bool
+      vars: 
+        operator_catalog_name: "{{ item.value.catalog_name }}"
+        operator_deploy_namespace: "{{ item.value.deploy_namespace }}"
+        operator_target_namespace: "{{ item.value.target_namespace }}"
+        operator_name: "{{ item.key }}"
+        operator_catalog_index: "{{ item.value.index_image | d(omit) }}"
+        operator_catalog_index_tag: "{{ item.value.index_image_tag | d(omit) }}"
+      register: op_sub_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator CatalogSource'
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item.key }}-CatalogSource.yml
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.catalog_name is defined and item.value.catalog_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.create_catalog is defined and item.value.create_catalog | bool
+      register: op_sub_deployed
+
+################## Deploy Operator Subscription #####################
+    - name: '{{ ansible_name_module }} | template | Copy Operator Subscripion to staging location'
+      template: 
+        src: "templates/Subscription.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item.key }}-Subscription.yml"
+        force: yes
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.catalog_name is defined and item.value.catalog_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.deploy_namespace_description is defined and item.value.deploy_namespace_description != ""
+      vars: 
+        operator_catalog_name: "{{ item.value.catalog_name }}"
+        operator_target_namespace: "{{ item.value.target_namespace }}"
+        operator_deploy_namespace: "{{ item.value.deploy_namespace }}"
+        operator_name: "{{ item.key }}"
+        operator_sub_channel: "{{ item.value.sub_channel }}"
+      register: op_sub_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator subscription'
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item.key }}-Subscription.yml
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.catalog_name is defined and item.value.catalog_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.deploy_namespace is defined and item.value.deploy_namespace != ""
+        - item.value.target_namespace is defined and item.value.target_namespace != ""
+        - item.value.deploy_namespace_description is defined and item.value.deploy_namespace_description != ""
+      register: op_sub_deployed
+
+################## Deploy Custom Resource if applicable (e.g. clusterlogging) ##################### 
+
+    - name: '{{ ansible_name_module }} | | get storage class if not provided'
+      shell: >
+        {{ openshift_cli }} get storageclass --no-headers | grep -i "{{ storage_class_type | d('kubernetes.io/aws-ebs') }}" | awk '{print $1}'
+      register: default_sc
+
+    - name: '{{ ansible_name_module }} | assert | Ensure storage exist for clusterlogging'
+      assert:
+        that:
+          - operators_to_deploy['clusterlogging-operator'].es_storageclass is defined and operators_to_deploy['clusterlogging-operator'].es_storageclass != '' or default_sc is defined and default_sc.stdout != ''
+        msg: "A storage class is needed for The ClusterLogging"
+
+    - name: '{{ ansible_name_module }} | set_fact | set infra node label'
+      set_fact:
+        es_sc: "{{ operators_to_deploy['clusterlogging-operator'].es_storageclass if operators_to_deploy['clusterlogging-operator'].es_storageclass is defined and operators_to_deploy['clusterlogging-operator'].es_storageclass != '' else default_sc.stdout }}"
+
+    - name: '{{ ansible_name_module }} | template | Copy Custom Resource to staging location'
+      template: 
+        src: "{{ item.value.customresource_template }}"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ (item.value.customresource_template | basename).split('.j2')[0] }}"
+        force: yes
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.catalog_name is defined and item.value.catalog_name != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.create_customresource is defined and item.value.create_customresource | bool 
+        - item.value.customresource_template is defined and item.value.customresource_template != ""
+      vars: 
+        infra_id: "{{ infra_label | d('infra') }}"
+        apply_nodeselector: "{{ item.value.es_apply_nodeselector | d('false') }}"
+        apply_toleration: "{{ item.value.es_apply_toleration | d('false') }}"
+        elasticsearch_node_count: "{{ item.value.es_node_count | d('3') }}"
+        cluster_storage_class: "{{ es_sc }}"
+        elasticsearch_pv_size: "{{ item.value.es_pv_size | d('200G') }}"
+        elaticsearch_maxage_application: "{{ item.value.es_maxage_app | d('1d') }}"
+        elaticsearch_maxage_infra: "{{ item.value.es_maxage_infra | d('7d') }}"
+        elaticsearch_maxage_audit: "{{ item.value.es_maxage_audit | d('7d') }}"
+        elasticsearch_memory: "{{ item.value.es_memory | d('16Gi') }}"
+        elasticsearch_proxy_memory_limit: "{{ item.value.es_proxy_memory_limit | d('256Mi') }}"
+        elasticsearch_proxy_memory_request: "{{ item.value.es_proxy_memory_request | d('256Mi') }}"
+      register: op_cr_copied
+
+    - name: '{{ ansible_name_module }} | stat | ensure deploy custom resource exists'
+      set_fact:
+        cr_files: "{{ cr_files | d([]) + [item.dest] }}"
+      loop: "{{ op_cr_copied.results }}"
+      when:
+        - item.failed is defined and not item.failed | bool
+        - item.state is defined and item.state == "file"
+        - item.dest is defined and item.dest != ""
+      register: crs_to_create
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for resources to be created'
+      wait_for:
+        timeout: 120
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator custom resource'
+      block:
+        - command: >
+            {{ openshift_cli }} create -f {{ item }}
+          loop: "{{ cr_files }}" 
+          when:
+            - cr_files is defined and cr_files | length > 0
+          register: op_cr_deployed
+
+      rescue:
+        - command: >
+            {{ openshift_cli }} apply -f {{ item }}
+          loop: "{{ cr_files }}" 
+          when:
+            - cr_files is defined and cr_files | length > 0
+          register: op_cr_deployed
+
+################## Deploy Configmap if applicable (e.g. cluster-monitoring-config) ##################### 
+
+    - name: '{{ ansible_name_module }} | template | Copy ConfigMap to staging location'
+      template: 
+        src: "{{ item.value.configmap_template }}"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ (item.value.configmap_template | basename).split('.j2')[0] }}"
+        force: yes
+      with_dict:
+        - "{{ operators_to_deploy }}"
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.deploy is defined and item.value.deploy | bool 
+        - item.value.create_configmap is defined and item.value.create_configmap | bool 
+        - item.value.configmap_template is defined and item.value.configmap_template != ""
+      vars: 
+        prometheus_retention: "{{ item.value.retention | d('24h') }}"
+      register: op_cm_copied
+
+    - name: '{{ ansible_name_module }} | stat | ensure deploy configmap exists'
+      set_fact:
+        cm_files: "{{ cm_files | d([]) + [item.dest] }}"
+      loop: "{{ op_cm_copied.results }}"
+      when:
+        - item.failed is defined and not item.failed | bool
+        - item.state is defined and item.state == "file"
+        - item.dest is defined and item.dest != ""
+      register: cms_to_create
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator custom resource'
+      block:
+        - command: >
+            {{ openshift_cli }} create -f {{ item }}
+          loop: "{{ cm_files }}" 
+          when:
+            - cm_files is defined and cm_files | length > 0
+          register: op_cm_deployed
+
+      rescue:
+        - command: >
+            {{ openshift_cli }} apply -f {{ item }}
+          loop: "{{ cm_files }}" 
+          when:
+            - cm_files is defined and cm_files | length > 0
+          register: op_cm_deployed

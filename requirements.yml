@@ -1,0 +1,6 @@
+---
+roles:
+  - src: https://github.com/cadjai/config-OpenShift-Lifecycle-Manager-Disconnected.git 
+    scm: git
+    name: config-disconnected-olm
+
