@@ -177,6 +177,47 @@ operators_to_deploy:
     es_apply_toleration: 'true'
     es_apply_nodeselector: 'true'
 
+################## Infra nodes configuration #################################
+infranodes:
+  infra-az1:
+    aws_region: 'us-east-1'
+    aws_az: 'a'
+    role: 'infra'
+    type: 'infra'
+    sg: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+    profile: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+    replica_count: 1
+    block_size: 120
+    volume_type: gp2
+    instance_type: 'm5.4xlarge'
+  infra-az2:
+    aws_region: 'us-east-1'
+    aws_az: 'b'
+    role: 'infra'
+    type: 'infra'
+    sg: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+    profile: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+    replica_count: 1
+    block_size: 120
+    volume_type: gp2
+    instance_type: 'm5.4xlarge'
+  infra-az3:
+    aws_region: 'us-east-1'
+    aws_az: 'c'
+    role: 'infra'
+    type: 'infra'
+    sg: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+    profile: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+    replica_count: 1
+    block_size: 120
+    volume_type: gp2
+    instance_type: 'm5.4xlarge'
+
+relocate_ingress_controller: 'true'
+relocate_image_registry: 'true'
+relocate_monitoring: 'true'
+relocate_logging: 'true'
+
 
 #####################################################################################################
 # End of user configurable variables

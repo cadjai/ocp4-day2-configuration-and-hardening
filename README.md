@@ -4,7 +4,7 @@ Role Name
 A utility role to OpenShift Container Platform 4.6+ (OCP4) post installation activities.
 Some of the roles are to configure a disconnected Operator Lifecycle Manager (OLM), deploying various operators from OLM, add infranodes and relocating OCP4 infrastructure components (ingress controller, image registry, cluster logging, cluster monitoring ...) from worker nodes to infra nodes as well as confiruging tolerations to make sure infra components can come up correctly on infra node. 
 
-
+Initial infrastructure nodes addition playbook focuses on AWS. 
 
 Requirements
 ------------
@@ -48,6 +48,22 @@ Plays and Role Variables
    - index_image_tag: The index tag if a dedicated index is being created for this operator.
 Note that there are operator sepcific variables not described here (see prometheus, elasticsearch for example of some of those variables).
 
+Variables for infranodes configuration
+- infranodes: The structure containing information about the various infrastructure nodes to add and configure. This is configured for AWS but can be adapted for any other cloud provider.
+  - aws_region: The AWS region the resource is to be provisioned in.
+  - aws_az: The AWS Availability Zone to to provision the node in.
+  - role: The Kubernetes role to apply to the node. Default to infra but can also be set to worker or any other string.
+  - type: The Kubernetes type to apply to the node. Default to infra but can also be set to worker or any other string.
+  - sg: The AWS security group to apply to the node once provisioned. It is assumed that the security group already exists. Default to worker_sg since that is created at cluster deployment.
+  - profile: The AWS IAM profile to apply to the node once provisioned. It is assumed that the IAM profile already exists. Default to worker since that is created at cluster deployment.
+  - replica_count: The number of node to provision. Default to 1 given that we are provisioning a node per AZ.
+  - block_size: The size of the root partition for the RHCOS instance . Default to 120 GB.
+  - volume_type: The type of persistence volume to use to support infrastructure resource persistence. Default to gp2.
+- relocate_ingress_controller: Indicates whether to move Ingress Controller from currently deployed worker nodes to the new infra nodes. Default to true.
+- relocate_image_registry: Indicates whether to move internal Image registry from currently deployed worker nodes to the new infra nodes. Default to true.
+- relocate_monitoring: Indicates whether to move cluster monitoring components from currently deployed worker nodes to the new infra nodes. Default to true.
+- relocate_logging: Indicates whether to move cluster logging components from currently deployed worker nodes to the new infra nodes. Default to true.
+
 Dependencies
 ------------
 This role uses the https://github.com/cadjai/config-OpenShift-Lifecycle-Manager-Disconnected.git role to configure the disconnected OLM.
@@ -64,6 +80,8 @@ Playbooks
 To run the main playbook use the ansible-playbook command as follows
 `ansible-plabook install-and-configure-operators-from-olm.yml`
 
+To run the infra nodes addition and configuraton  playbook use the ansible-playbook command as follows
+`ansible-plabook add-and-configure-infranodes.yml`
 
 License
 -------
