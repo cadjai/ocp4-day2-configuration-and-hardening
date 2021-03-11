@@ -218,6 +218,10 @@ relocate_image_registry: 'true'
 relocate_monitoring: 'true'
 relocate_logging: 'true'
 
+### Cluster Admins
+cluster_admins:
+  -
+  -
 
 #####################################################################################################
 # End of user configurable variables

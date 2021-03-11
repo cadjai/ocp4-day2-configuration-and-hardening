@@ -1,0 +1,42 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+- name: 'add-cluster-admins.yml' 
+  hosts: localhost 
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Add Cluster Admins"
+    ansible_name_module: "{{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+      
+    - name: Add Cluster Admins to cluster
+      command: >
+        {{ openshift_cli }} adm policy add-cluster-role-to-user cluster-admin '{{ item }}'
+      loop: "{{ cluster_admins }}" 
+      failed_when:
+        - clusteradmins_added.rc >=1
+        - " not 'already exists' in clusteradmins_added.stderr "
+      register: clusteradmins_added
+       
+
