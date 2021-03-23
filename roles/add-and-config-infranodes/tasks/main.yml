@@ -87,7 +87,12 @@
         {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"nodeSelector":{"matchLabels":{"node-role.kubernetes.io/{{ infra_label }}": "" }}}}}'
       register: ingress_controller_placed
 
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add tolerations'
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add tolerations worker nodes'
+      command: >
+        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"tolerations":[{"key": "node-role.kubernetes.io/worker", "operator": "Exists", "effect": "NoSchedule"}] }}}'
+      register: ingress_controller_tolerated
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add tolerations infra nodes'
       command: >
         {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"tolerations":[{"key": "node-role.kubernetes.io/{{ infra_label }}", "operator": "Exists", "effect": "NoSchedule"}] }}}'
       register: ingress_controller_tolerated
