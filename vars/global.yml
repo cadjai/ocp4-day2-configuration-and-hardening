@@ -225,6 +225,15 @@ cluster_admins:
   -
   -
 
+
+#### keycloak config variables
+identity_claim: "{{ vault_identity_claim }}"
+client_ID: "{{ vault_client_ID }}"
+keycloak_secret: "{{ vault_client_secret }}"
+keycloak_secret_name: "{{ vault_identity_claim }}"
+issuer_url: "{{ vault_issuer_url }}"
+
+~                   
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################

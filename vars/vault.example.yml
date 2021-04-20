@@ -12,3 +12,11 @@ vault_registry_admin_password: ""
 vault_ocp_cluster_user: ''
 vault_ocp_cluster_user_password: ''
 vault_ocp_cluster_console_url: ''
+
+# Keycloak Provider config
+vault_identity_claim: ''
+vault_client_ID: ''
+vault_client_secret: ''
+vault_identity_claim: ''
+vault_issuer_url: ''
+
