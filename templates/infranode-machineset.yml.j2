@@ -3,21 +3,21 @@ kind: MachineSet
 metadata:
   labels:
     machine.openshift.io/cluster-api-cluster: {{ infra_id }} 
-  name: {{ infra_id }}-{{ node_role }}-{{ aws_region }}{{ aws_az }}-infra
+  name: {{ infra_id }}-{{ node_role }}-{{ aws_region }}{{ aws_az }}
   namespace: openshift-machine-api
 spec:
   replicas: {{ node_replica_count }} 
   selector:
     matchLabels:
       machine.openshift.io/cluster-api-cluster: {{ infra_id }} 
-      machine.openshift.io/cluster-api-machineset: {{ infra_id }}-{{ node_role }}-{{ aws_region }}
+      machine.openshift.io/cluster-api-machineset: {{ infra_id }}-{{ node_role }}-{{ aws_region }}{{ aws_az }}
   template:
     metadata:
       labels:
         machine.openshift.io/cluster-api-cluster: {{ infra_id }} 
         machine.openshift.io/cluster-api-machine-role: {{ node_role }}
         machine.openshift.io/cluster-api-machine-type: {{ node_type }}
-        machine.openshift.io/cluster-api-machineset: {{ infra_id }}-{{ node_role }}-{{ aws_region }}
+        machine.openshift.io/cluster-api-machineset: {{ infra_id }}-{{ node_role }}-{{ aws_region }}{{ aws_az }}
     spec:
       metadata: 
         labels:
@@ -56,7 +56,7 @@ spec:
             filters:
             - name: tag:Name
               values:
-              - {{ infra_id }}-private-{{ aws_region }}{{ aws_az }}
+              - {{ vpc_name }}-private-{{ aws_region }}{{ aws_az }}
           tags:
           - name: kubernetes.io/cluster/{{ infra_id }}
             value: owned

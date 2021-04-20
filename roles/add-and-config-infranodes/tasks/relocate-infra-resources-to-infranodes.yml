@@ -1,0 +1,175 @@
+---
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get machine | get infra machine'
+  shell: >
+    {{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep infra | awk '{print $1}'
+  register: infra_machines
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get machine | get infra machine node names'
+  command: >
+    {{ openshift_cli }} get machine {{ item }} -o=jsonpath='{.status.nodeRef.name}{"\n"}' -n openshift-machine-api
+  when:
+    - infra_machines is defined
+    - infra_machines.rc == 0
+    - infra_machines.stdout_lines is defined
+    - infra_machines.stdout_lines != "" 
+  loop: "{{ infra_machines.stdout_lines }}"
+  register: infra_node_names
+
+- name: '{{ ansible_name_module }} | set_fact | set infra node label'
+  set_fact:
+    infra_label: "{{ infranodes[(infranodes.keys() | list)[0]].role }}"
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} adm taint | taint infra nodes'
+  command: >
+    {{ openshift_cli }} adm taint nodes {{ item.stdout }} node-role.kubernetes.io/{{ infra_label }}:NoSchedule --overwrite=true
+  loop: "{{ infra_node_names.results }}"
+
+- name: '{{ ansible_name_module }} | Move Ingress Controller to Infra nodes'
+  when:
+    - relocate_ingress_controller is defined
+    - relocate_ingress_controller | bool
+  block:
+    - name: '{{ ansible_name_module }} | shell :{{ openshift_cli }} | check if node selector exists'
+      shell: >
+        {{ openshift_cli }} get ingresscontroller default -n openshift-ingress-operator -o yaml | grep -i nodePlacement
+      ignore_errors: true
+      register: ingress_node_selector_exists
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller remove node selector'
+      command: >
+        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type json -p='[{"op": "remove", "path": "/spec/nodePlacement/nodeSelector/matchLabels"}]'
+      when:
+        - ingress_node_selector_exists is defined
+        - ingress_node_selector_exists.rc is defined
+        - ingress_node_selector_exists.rc == 0
+      register: ingress_controller_removed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add node selector'
+      command: >
+        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"nodeSelector":{"matchLabels":{"node-role.kubernetes.io/{{ infra_label }}": "" }}}}}'
+      register: ingress_controller_placed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add tolerations worker nodes'
+      command: >
+        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"tolerations":[{"key": "node-role.kubernetes.io/worker", "operator": "Exists", "effect": "NoSchedule"}] }}}'
+      register: ingress_controller_tolerated
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add tolerations infra nodes'
+      command: >
+        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"tolerations":[{"key": "node-role.kubernetes.io/{{ infra_label }}", "operator": "Exists", "effect": "NoSchedule"}] }}}'
+      register: ingress_controller_tolerated
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | ingress controller tolerations'
+      command: >
+        {{ openshift_cli }} get pod -n openshift-ingress-operator -o wide
+      register: ingress_controller_infra
+
+- name: '{{ ansible_name_module }} | Move Image Registry to Infra nodes'
+  when:
+    - relocate_image_registry is defined
+    - relocate_image_registry | bool
+  block:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | image registry add node selector'
+      command: >
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type merge -p '{"spec":{"nodeSelector":{"node-role.kubernetes.io/{{ infra_label }}": "" }}}'
+      register: image_registry_placed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | image registry add tolerations'
+      command: >
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type merge -p '{"spec":{"tolerations":[{"key": "node-role.kubernetes.io/{{ infra_label }}", "operator": "Exists", "effect": "NoSchedule"}] }}'
+      register: image_registry_tolerated
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | image registry'
+      command: >
+        {{ openshift_cli }} get pods -n openshift-image-registry -o wide
+      register: image_registry_infra
+
+- name: '{{ ansible_name_module }} | Move Monitoring to Infra nodes'
+  when:
+    - relocate_monitoring is defined
+    - relocate_monitoring | bool
+  block:
+    - name: '{{ ansible_name_module }} | template | Copy Config Map'
+      template:
+        src: "templates/infranode-configmap.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/infranode-configmap.yml"
+      vars:
+        infra_label: "{{ infra_label }}"
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy infra machinesets '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/infranode-configmap.yml
+      register: monitoring_placed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | image registry'
+      command: >
+        {{ openshift_cli }} get pods -n openshift-image-registry -o wide
+      register: image_registry_infra
+
+- name: '{{ ansible_name_module }} | Move Cluster Logging to Infra nodes'
+  when:
+    - relocate_logging is defined
+    - relocate_logging | bool
+  block:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | clusterloggin'
+      command: >
+        {{ openshift_cli }} get ClusterLogging instance -n openshift-logging
+      failed_when:
+        - cluster_logging_install_check.rc >= 1
+        - "not 'have a resource type' in cluster_logging_install_check.stderr"
+      register: cluster_logging_install_check 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | curator'
+      assert:
+        that:
+          - cluster_logging_install_check is defined
+          - cluster_logging_install_check.rc is defined
+          - cluster_logging_install_check.rc == 0
+        msg: " The ClusterLogging and ElasticSearch must be installed before this"
+
+    - name: '{{ ansible_name_module }} | | get storage class if not provided'
+      shell: >
+        {{ openshift_cli }} get storageclass --no-headers | grep -i "{{ storage_class_type | d('kubernetes.io/aws-ebs') }}" | awk '{print $1}'
+      register: default_sc
+
+    - name: '{{ ansible_name_module }} | set_fact | set infra node label'
+      set_fact:
+        es_sc: "{{ operators_to_deploy['clusterlogging-operator'].es_storageclass if operators_to_deploy['clusterlogging-operator'].es_storageclass is defined and operators_to_deploy['clusterlogging-operator'].es_storageclass != '' else default_sc.stdout }}"
+    - name: '{{ ansible_name_module }} | template | Copy Updated Custom Resource to staging location'
+      template:
+        src: "templates/cluster-logging-customresource-infra.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/cluster-logging-customresource-infra.yml"
+        force: yes
+      vars:
+        infra_id: "{{ infra_label }}"
+        elasticsearch_node_count: "{{ operators_to_deploy['clusterlogging-operator'].es_node_count | d('3') }}"
+        cluster_storage_class: "{{ es_sc }}"
+        elasticsearch_pv_size: "{{ operators_to_deploy['clusterlogging-operator'].es_pv_size | d('200G') }}"
+        elaticsearch_maxage_application: "{{ item.value.es_maxage_app | d('1d') }}"
+        elaticsearch_maxage_infra: "{{ operators_to_deploy['clusterlogging-operator'].es_maxage_infra | d('7d') }}"
+        elaticsearch_maxage_audit: "{{ operators_to_deploy['clusterlogging-operator'].es_maxage_audit | d('7d') }}"
+        elasticsearch_memory: "{{ operators_to_deploy['clusterlogging-operator'].es_memory | d('8Gi') }}"
+        elasticsearch_proxy_memory_limit: "{{ operators_to_deploy['clusterlogging-operator'].es_proxy_memory_limit | d('256Mi') }}"
+        elasticsearch_proxy_memory_request: "{{ operators_to_deploy['clusterlogging-operator'].es_proxy_memory_request | d('256Mi') }}"
+      register: op_cr_copied
+
+    - name: '{{ ansible_name_module }} | command: {{ openshift_cli }} | Deploy  Updated Custom Resource'
+      block:
+        - command: >
+            {{ openshift_cli }} create -f {{ staging_dir | d('/tmp', true) }}/cluster-logging-customresource-infra.yml
+          when:
+            - op_cr_copied is defined and op_cr_copied.changed is defined and op_cr_copied.changed | bool
+          register: op_cr_deployed
+
+      rescue:
+        - command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/cluster-logging-customresource-infra.yml
+          when:
+            - op_cr_copied is defined and op_cr_copied.changed is defined and op_cr_copied.changed | bool
+          register: op_cr_deployed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | image registry'
+      command: >
+        {{ openshift_cli }} get pods -n openshift-monitoring -o wide
+      register: monitoring_infra
+

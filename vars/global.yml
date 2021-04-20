@@ -18,16 +18,16 @@ operator_catalogs_to_deploy:
   redhat-operators:
     catalog_name: 'custom-redhat-operator-catalog'
     catalog_index: 'redhat-operator-index'
-    catalog_index_tag: 'v4.6'
+    catalog_index_tag: 'v4.7'
     catalog_publisher: 'redhat'
-    content_source_file: '/repos/ocp4/artifactory_content_mirror/redhat-operator-index-manifests/imageContentSourcePolicy.yaml'
+    content_source_file: '/path/to/redhat-operator-index-manifests/imageContentSourcePolicy.yaml'
     mirror: "true"
   community-operators:
     catalog_name: 'community-redhat-operator-catalog'
     catalog_index: 'community-operator-index'
     catalog_index_tag: 'latest'
     catalog_publisher: 'community'
-    content_source_file: '/repos/ocp4/artifactory_content_mirror/community-operator-index-manifests/imageContentSourcePolicy.yaml'
+    content_source_file: '/path/to/community-operator-index-manifests/imageContentSourcePolicy.yaml'
     mirror: "true"
   market-operators:
     catalog_name: ''
@@ -39,16 +39,16 @@ operator_catalogs_to_deploy:
   certified-operators:
     catalog_name: 'certified-redhat-operator-catalog'
     catalog_index: 'certified-operator-index'
-    catalog_index_tag: 'v4.6'
+    catalog_index_tag: 'v4.7'
     catalog_publisher: 'certified'
-    content_source_file: '/repos/ocp4/artifactory_content_mirror/certified-operator-index-manifests/imageContentSourcePolicy.yaml'
+    content_source_file: '/path/to/certified-operator-index-manifests/imageContentSourcePolicy.yaml'
     mirror: "false"
 
 operators_to_deploy:
   group-sync-operator:
     group_name: 'group-sync-operator-group'
     catalog_name: 'community-redhat-operator-catalog'
-    sub_channel: '4.6'
+    sub_channel: 'alpha'
     deploy_namespace: 'group-sync-operator'  ## used for where the operator is deployed
     target_namespace: 'group-sync-operator'  ## used for the scope of operator
     deploy_namespace_description: 'group-sync-operator'
@@ -60,7 +60,7 @@ operators_to_deploy:
   file-integrity-operator:
     group_name: 'file-integrity-operator-group'
     catalog_name: 'custom-redhat-operator-catalog'
-    sub_channel: '4.6'
+    sub_channel: '4.7'
     deploy_namespace: 'openshift-file-integrity'
     target_namespace: 'openshift-file-integrity' ### values are all, empty or list of ns names
     deploy_namespace_description: 'openshift-file-integrity'
@@ -69,13 +69,12 @@ operators_to_deploy:
     create_catalog: 'false'
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
-    index_image_tag: 'v4.6'
+    index_image_tag: 'v4.7'
 
   compliance-operator:
     group_name: 'compliance-operator-group'
     catalog_name: 'custom-redhat-operator-catalog'
-    #catalog_name: 'compliance-operator'  ### this can be set to a different name if creating the catalog. If not use one of the main indices.
-    sub_channel: '4.6'
+    sub_channel: '4.7'
     deploy_namespace: 'openshift-compliance'
     target_namespace: 'openshift-compliance'
     deploy_namespace_description: 'openshift-compliance'
@@ -84,7 +83,7 @@ operators_to_deploy:
     create_catalog: 'false'
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
-    index_image_tag: 'v4.6'
+    index_image_tag: 'v4.7'
 
   koku-metrics-operator:
     group_name: 'koku-metrics-operator-group'
@@ -103,7 +102,7 @@ operators_to_deploy:
   prometheus-operator:
     group_name: 'prometheus-operator-group'
     catalog_name: 'custom-redhat-operator-catalog'
-    sub_channel: '4.6'
+    sub_channel: '4.7'
     target_namespace: 'openshift-monitoring' ### values are all, empty or list of ns names
     deploy_namespace: 'openshift-monitoring'
     deploy_namespace_description: 'openshift-monitoring'
@@ -112,7 +111,7 @@ operators_to_deploy:
     create_catalog: 'false'
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
-    index_image_tag: 'v4.6'
+    index_image_tag: 'v4.7'
     create_configmap: 'true'
     configmap_template: 'templates/cluster-monitoring-config.yml.j2'
     retention: '24h'
@@ -134,7 +133,7 @@ operators_to_deploy:
   elasticsearch-operator:
     group_name: 'elasticsearch-operator-group'
     catalog_name: 'custom-redhat-operator-catalog'
-    sub_channel: '4.6'
+    sub_channel: '5.0'
     deploy_namespace: 'openshift-operators-redhat'
     target_namespace: 'all' ### values are all, empty or list of ns names
     deploy_namespace_description: 'openshift-operators-redhat'
@@ -145,14 +144,14 @@ operators_to_deploy:
     create_catalog: 'false'
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
-    index_image_tag: 'v4.6'
+    index_image_tag: 'v4.7'
     create_rolebinding: 'true'
     rolebindingconfig: 'templates/elasticsearch-rolebinding.yml'
 
   cluster-logging:
     group_name: 'cluster-logging-operator-group'
     catalog_name: 'custom-redhat-operator-catalog'
-    sub_channel: '4.6'
+    sub_channel: '5.0'
     deploy_namespace: 'openshift-logging'
     target_namespace: 'openshift-logging'  ### values are all, empty or list of ns names
     deploy_namespace_description: 'openshift-logging'
@@ -190,6 +189,7 @@ infranodes:
     block_size: 120
     volume_type: gp2
     instance_type: 'm5.4xlarge'
+    ami: 'ami-0d5f9982f029fbc14'
   infra-az2:
     aws_region: 'us-east-1'
     aws_az: 'b'
@@ -201,6 +201,7 @@ infranodes:
     block_size: 120
     volume_type: gp2
     instance_type: 'm5.4xlarge'
+    ami: 'ami-0d5f9982f029fbc14'
   infra-az3:
     aws_region: 'us-east-1'
     aws_az: 'c'
@@ -212,7 +213,8 @@ infranodes:
     block_size: 120
     volume_type: gp2
     instance_type: 'm5.4xlarge'
-
+    ami: 'ami-0d5f9982f029fbc14'
+vpc_name: ''
 relocate_ingress_controller: 'true'
 relocate_image_registry: 'true'
 relocate_monitoring: 'true'
