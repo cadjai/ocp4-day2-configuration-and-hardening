@@ -1,0 +1,46 @@
+- name: ' Configure Audit Log Policy | configure-audit-log-policy.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "configure audit log policy"
+    ansible_name_module: " Post Cluster Installation | Configure Audit Log Policy | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+  - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    #### By default the policy is set to Default on cluster deployment. Use this only to change that to WriteRequestBodies or AllRequestBodies
+    #### if you run this without setting audit_log_profile then the policy will be set to AllRequestBodies
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | update audit log policy'
+      command: >
+        {{ openshift_cli }} patch apiserver cluster --type merge -p '{"spec":{"audit":{"profile": "{{ audit_log_profile | default('AllRequestBodies', true) }}" }}}'
+      register: audit_log_applied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | verify audit log policy applied'
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | verify audit log policy applied to api servers'
+          command: >
+            {{ openshift_cli }} get {{ item }} -o=jsonpath='{range .items[0].status.conditions[?(@.type=="NodeInstallerProgressing")]}{.reason}{"\n"}{.message}{"\n"}'
+          loop:
+            - kubeapiserver
+          register: audi_log_apiverified
+
