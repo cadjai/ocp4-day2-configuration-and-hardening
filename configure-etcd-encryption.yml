@@ -1,0 +1,53 @@
+- name: ' Configure ETCD Encryption | configure-etcd-encryption.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "configure etcd encryption"
+    ansible_name_module: " Post Cluster Installation | Configure ETCD Encryption | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+ 
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | apply encryption to etcd'
+      command: >
+        {{ openshift_cli }} patch apiserver cluster --type merge -p '{"spec":{"encryption":{"type": "{{ etcd_encryption | default('aescbc', true) }}" }}}'
+      register: etcd_encryption_applied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | verify encryption applied to etcd'
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | verify encryption applied to api servers'
+          command: >
+            {{ openshift_cli }} get {{ item }} -o=jsonpath='{range .items[0].status.conditions[?(@.type=="Encrypted")]}{.reason}{"\n"}{.message}{"\n"}'
+          loop:
+            - openshiftapiserver
+            - kubeapiserver
+          register: etcd_encryption_apiverified
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | verify encryption applied to authentication API server'
+          command: >
+            {{ openshift_cli }} get {{ item }} -o=jsonpath='{range .items[0].status.conditions[?(@.type=="Encrypted")]}{.reason}{"\n"}{.message}{"\n"}'
+          loop:
+            - authentication.operator.openshift.io
+          register: etcd_encryption_authverified
+
