@@ -1,0 +1,43 @@
+- name: ' Konductor | Provision UPI Infra | config-clusterlogging-extras.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Configure Cluster Logging Forwarder"
+    ansible_name_module: " Post Cluster Installation | Deploy Operators | {{ module }}"
+    ansible_python_interpreter: /usr/bin/python3
+  pre_tasks:
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+ ##################### Deploy ClusterLogForwarder if applicable  #####################
+    - name: '{{ ansible_name_module }} | template | CopyClusterLogForwarder to staging location'
+      template:
+        src: "templates/ClusterLogForwarder-cr.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/ClusterLogForwarder-cr.yml"
+        force: yes
+      register: clf_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy CopyClusterLogForwarder custom resource'
+      block:
+        - command: >
+            {{ openshift_cli }} create -f {{ staging_dir | d('/tmp', true) }}/ClusterLogForwarder-cr.yml
+          when:
+            - clf_copied is defined and clf_copied.dest is defined and clf_copied.dest != ""
+          register: op_cm_deployed
+
+      rescue:
+        - command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/ClusterLogForwarder-cr.yml
+          when:
+            - clf_copied is defined and clf_copied.dest is defined and clf_copied.dest != ""
+          register: clf_deployed
+
