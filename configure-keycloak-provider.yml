@@ -47,10 +47,10 @@
     - name: '{{ ansible_name_module }} | template | Copy Infranode machineset template to staging location'
       template:
         src: "templates/oauth-cr.yml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item.key }}-oauth-cr.yml"
+        dest: "{{ staging_dir | d('/tmp', true) }}/oauth-cr.yml"
       register: oauth_cr_file_created
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | create secret'
       command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item.key }}-oauth-cr.yml
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/oauth-cr.yml
       register: oauth_cr_updated
