@@ -1,0 +1,14 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleNotification
+metadata:
+  name: '{{ banner_name }}'
+spec:
+  backgroundColor: '{{ banner_background_color }}'
+  color: '{{ banner_color }}'
+{% if banner_link is defined and banner_link != '' %}
+  link: '{{ banner_link }}'
+{% endif %}
+
+  location: '{{ banner_location }}'
+  text: >-
+    {{ banner_text }}

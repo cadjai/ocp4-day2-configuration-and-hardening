@@ -233,9 +233,15 @@ keycloak_secret: "{{ vault_client_secret }}"
 keycloak_secret_name: "{{ vault_identity_claim }}"
 issuer_url: "{{ vault_issuer_url }}"
 
-~                   
+
+####### banner related vairables
+banner_name: 'unclass'
+banner_text: 'UNCLASSIFIED'
+banner_color: '#ffffff'
+banner_background_color: '#006400'
+banner_location: 'BannerTopBottom'
+banner_link: ''
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
-
-
