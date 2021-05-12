@@ -19,10 +19,20 @@
         - configure_compliance_scan is defined
         - configure_compliance_scan | bool
       block:
+        - name: '{{ ansible_name_module }} | | get storage class if not provided'
+          shell: >
+            {{ openshift_cli }} get storageclass --no-headers | grep -i "{{ storage_class_type | d('kubernetes.io/aws-ebs') }}" | awk '{print $1}'
+          register: default_sc
+
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render default ScanSetting CR'
           template:
             src: "templates/scansetting-cr.yaml.j2"
             dest: "{{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml"
+            force: yes
+          vars:
+            cluster_storage_class: "{{ default_sc }}"
+            scan_pvc_size: "{{ scan_pvc_size | default('1Gi') }}"
+
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting '
           command: >
@@ -33,6 +43,7 @@
           template:
             src: "templates/scansettingbinding-cr.yaml.j2"
             dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr.yaml"
+            force: yes
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
           command: >
