@@ -70,3 +70,24 @@
             - compliance_findings_remediations.stdout_lines | length > 0 
           register: compliance_findings_remediated
 
+ #################### Get and annotate scans to enable rescans #################################
+    - name: '{{ ansible_name_module }} | Apply Scan Remediation in case the auto apply was not set'
+      when:
+        - enable_compliance_rescan is defined
+        - enable_compliance_rescan | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get compliance scans'
+          shell: >
+            {{ openshift_cli }} get compliancescans.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
+          register: compliance_scans
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | annotate scans '
+          command: >
+            {{ openshift_cli }} annotate compliancescans/{{ item }} compliance.openshift.io/rescan=
+          loop: "{{ compliance_scans.stdout_lines }}"
+          when:
+            - compliance_scans is defined
+            - compliance_scans.stdout_lines is defined
+            - compliance_scans.stdout_lines | length > 0
+          register: compliance_rescan_enabled
+
