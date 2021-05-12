@@ -242,6 +242,16 @@ banner_background_color: '#006400'
 banner_location: 'BannerTopBottom'
 banner_link: ''
 
+######## hardening compliance operator vars
+remediate_compliance_scan: 'true'
+configure_compliance_scan: 'true'
+auto_create_remediation: 'true'
+auto_apply_remediate: 'true'
+compliance_scan_schedule: '0 1 * * *'
+compliance_name: 'cis-compliance'
+platform_node_profile_name: 'ocp4-cis-node'
+platform_profile_name: 'ocp4-cis'
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################

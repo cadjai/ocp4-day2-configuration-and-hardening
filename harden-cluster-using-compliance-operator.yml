@@ -1,0 +1,72 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-using-compliance-operator.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Remediate findings"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login 
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Configure compliance scan if not already done'
+      when:
+        - configure_compliance_scan is defined
+        - configure_compliance_scan | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render default ScanSetting CR'
+          template:
+            src: "templates/scansetting-cr.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml"
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml -n openshift-compliance
+          register: scansetting_applied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render default ScanSettingBinding CR'
+          template:
+            src: "templates/scansettingbinding-cr.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr.yaml"
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr.yaml -n openshift-compliance
+          register: scansetting_applied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get automatable findings results'
+      shell: >
+        {{ openshift_cli }} get compliancecheckresults -l 'compliance.openshift.io/check-status in (FAIL),compliance.openshift.io/automated-remediation' -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_findings_automatable
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get manual findings '
+      shell: >
+        {{ openshift_cli }} get compliancecheckresults -l 'compliance.openshift.io/check-status in (FAIL),!compliance.openshift.io/automated-remediation' -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_findings_manual
+
+#################### Get and apply remediations #################################
+    - name: '{{ ansible_name_module }} | Apply Scan Remediation in case the auto apply was not set'
+      when:
+        - remediate_compliance_scan is defined
+        - remediate_compliance_scan | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get automatable remediations'
+          shell: >
+            {{ openshift_cli }} get complianceremediations.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
+          register: compliance_findings_remediations
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | apply automatable findings '
+          command: >
+            {{ openshift_cli }} patch complianceremediations.compliance.openshift.io {{ item }} --type merge -p '{"spec":{"apply": true}}' -n openshift-compliance
+          loop: "{{ compliance_findings_remediations.stdout_lines }}"
+          when:
+            - compliance_findings_remediations is defined
+            - compliance_findings_remediations.stdout_lines is defined
+            - compliance_findings_remediations.stdout_lines | length > 0 
+          register: compliance_findings_remediated
+

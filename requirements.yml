@@ -3,4 +3,7 @@ roles:
   - src: https://github.com/cadjai/config-OpenShift-Lifecycle-Manager-Disconnected.git 
     scm: git
     name: config-disconnected-olm
+  - src: https://github.com/cadjai/ocp-cluster-login.git 
+    scm: git
+    name: ocp-cluster-login
 

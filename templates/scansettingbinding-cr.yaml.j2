@@ -1,0 +1,15 @@
+apiVersion: compliance.openshift.io/v1alpha1
+kind: ScanSettingBinding
+metadata:
+  name: {{ compliance_name | default('cis-compliance') }}
+profiles:
+  - name: {{ platform_node_profile_name | default('ocp4-cis-node') }}
+    kind: Profile
+    apiGroup: compliance.openshift.io/v1alpha1
+  - name: {{ platform_profile_name | default('ocp4-cis') }}
+    kind: Profile
+    apiGroup: compliance.openshift.io/v1alpha1
+settingsRef:
+  name: default
+  kind: ScanSetting
+  apiGroup: compliance.openshift.io/v1alpha1

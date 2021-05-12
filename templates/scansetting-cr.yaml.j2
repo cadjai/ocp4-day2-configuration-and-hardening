@@ -1,0 +1,21 @@
+apiVersion: compliance.openshift.io/v1alpha1
+kind: ScanSetting
+metadata:
+  name: default-auto-apply
+  namespace: openshift-compliance
+autoUpdateRemediations: {{ auto_create_remediation | default('true') }} 
+autoApplyRemediations: {{ auto_apply_remediate | default('true') }} 
+rawResultStorage:
+  pvAccessModes:
+    - ReadWriteOnce
+  rotation: 3
+  size: 1Gi
+schedule: {{ compliance_scan_schedule | default('0 1 * * *') }}
+roles:
+  - worker
+  - master
+scanTolerations:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+    operator: Exists
+
