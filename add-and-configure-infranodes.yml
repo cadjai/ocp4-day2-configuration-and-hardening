@@ -5,7 +5,7 @@
     - 'vars/vault.yml'
     - 'vars/global.yml'
   vars:
-    ansible_python_interpreter: /usr/bin/python3
+   #ansible_python_interpreter: /usr/bin/python3
     module: "add-and-configure-infranodes"
     ansible_name_module: "Provision Cluster Infra | {{ module }}"
   pre_tasks:

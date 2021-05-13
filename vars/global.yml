@@ -252,6 +252,11 @@ compliance_name: 'cis-compliance'
 platform_node_profile_name: 'ocp4-cis-node'
 platform_profile_name: 'ocp4-cis'
 
+######## hardening fileintegrity operator vars
+configure_fileintegrity: 'true'
+
+
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
