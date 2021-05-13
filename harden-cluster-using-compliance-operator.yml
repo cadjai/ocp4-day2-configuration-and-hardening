@@ -19,6 +19,24 @@
         - configure_compliance_scan is defined
         - configure_compliance_scan | bool
       block:
+        - name: '{{ ansible_name_module }} | get moderate profile if platform_node_profile_name not provided'
+          shell: >
+            {{ openshift_cli }} get profiles.compliance.openshift.io --no-headers | grep -i "moderate" | awk '{print $1}' | sort
+          when:
+            - not platform_node_profile_name is defined or platform_node_profile_name == ''
+          register: default_profiles
+
+        - name: '{{ ansible_name_module }} | set_fact | default scan profile vars'
+          set_fact:
+            platform_node_profile_name: "{{ default_profiles.stdout_lines[1] }}"
+            platform_profile_name: "{{ default_profiles.stdout_lines[0] }}"
+            compliance_name: "nist-moderate"
+          when:
+            - not platform_node_profile_name is defined or platform_node_profile_name == ''
+            - default_profiles is defined
+            - default_profiles.stdout_lines is defined
+            - default_profiles.stdout_lines | length > 0
+
         - name: '{{ ansible_name_module }} | | get storage class if not provided'
           shell: >
             {{ openshift_cli }} get storageclass --no-headers | grep -i "{{ storage_class_type | d('kubernetes.io/aws-ebs') }}" | awk '{print $1}'
@@ -30,9 +48,7 @@
             dest: "{{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml"
             force: yes
           vars:
-            cluster_storage_class: "{{ default_sc }}"
-            scan_pvc_size: "{{ scan_pvc_size | default('1Gi') }}"
-
+            cluster_storage_class: "{{ default_sc.stdout }}"
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting '
           command: >
