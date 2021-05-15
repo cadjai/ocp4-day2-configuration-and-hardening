@@ -118,3 +118,34 @@
             - compliance_scans.stdout_lines | length > 0
           register: compliance_rescan_enabled
 
+#################### Patch compliance scan setting to perform auto remidiation by default  #################################
+    - name: '{{ ansible_name_module }} | Patch ScanSetting to do auto Remediation in case the auto apply was not set'
+      when:
+        - enable_auto_remediate is defined
+        - enable_auto_remediate | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get compliance scans'
+          shell: >
+            {{ openshift_cli }} get scansettings.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
+          register: compliance_scansettings
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | patch scansettings 1 of 2'
+          command: >
+            {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"autoUpdateRemediations": true}' -n openshift-compliance
+          loop: "{{ compliance_scansettings.stdout_lines }}"
+          when:
+            - compliance_scansettings is defined
+            - compliance_scansettings.stdout_lines is defined
+            - compliance_scansettings.stdout_lines | length > 0
+          register: compliance_scansettings_patched_autoupdate
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | patch scansettings 2 of 2'
+          command: >
+            {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"autoApplyRemediations": true}' -n openshift-compliance
+          loop: "{{ compliance_scansettings.stdout_lines }}"
+          when:
+            - compliance_scansettings is defined
+            - compliance_scansettings.stdout_lines is defined
+            - compliance_scansettings.stdout_lines | length > 0
+          register: compliance_scansettings_patched_autoapply
+
