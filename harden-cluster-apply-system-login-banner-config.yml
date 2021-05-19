@@ -1,0 +1,65 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-apply-system-login-banner-config.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3.6
+    module: "Apply System Login Banner"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Apply login banner Configuration'
+      block:
+        - name: '{{ ansible_name_module }} | get node roles'
+          shell: >
+            {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
+          register: node_roles
+
+        - name: '{{ ansible_name_module }} | template | Copy login banner config to staging location'
+          template: 
+            src: "templates/login-banner.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/login-banner"
+            force: yes
+          register: login_banner_conf_copied
+
+        - name: '{{ ansible_name_module }} | command:cat | Load login_banner_conf'
+          shell: cat {{ staging_dir | d('/tmp', true) }}/login-banner  
+          when:
+            - login_banner_conf_copied is defined
+          register: login_banner_conf_loaded
+
+        - name: '{{ ansible_name_module }} | template | Copy login banner config to staging location'
+          vars:
+            login_banner_conf_data: "{{ login_banner_conf_loaded.stdout }}"
+            login_banner_path: "/etc/data"
+            node_role: "{{ item }}"
+          template: 
+            src: "templates/login-banner-mc.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/login-banner-mc-{{ item }}.yml"
+            force: yes
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - login_banner_conf_loaded is defined
+            - login_banner_conf_loaded.rc is defined and login_banner_conf_loaded.rc == 0
+            - login_banner_conf_loaded.stdout is defined and login_banner_conf_loaded.stdout != ""
+          register: login_banner_mc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy login banner config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/login-banner-mc-{{ item }}.yml 
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - login_banner_mc_copied is defined
+          register: login_banner_mc_deployed

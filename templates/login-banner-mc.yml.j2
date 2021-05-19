@@ -1,0 +1,25 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  annotations:
+  labels:
+    machineconfiguration.openshift.io/role: {{ node_role }} 
+  name: 99-z{{ node_role }}{{ login_banner_path | replace('/','-') }}-conf
+spec:
+  config:
+    ignition:
+      version: {{ ignition_config_version | d('3.2.0') }}
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,{{ login_banner_conf_data | b64encode }}
+          verification: {}
+        filesystem: root
+        mode: 420
+        overwrite: true
+        path: {{ login_banner_path | default('/etc/issue') }}
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: "" 
