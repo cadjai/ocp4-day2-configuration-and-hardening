@@ -1,0 +1,83 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+- name: ' Konductor | Shaman | Destroy | delete-nodes-created-via-machineset.yml'
+  hosts: local
+  vars:
+    module: "destroy machineset resources"
+    state_provider: "local"
+    tf_module_path: "{{ dir_terraform }}/shaman"
+    openshift_cli: "/root/platform/bin/oc"
+    vars_module_path: "{{ dir_terraform }}"
+    ansible_name_module: " Konductor | Shaman| {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} patch'
+      command: >
+         {{ openshift_cli }} patch schedulers.config.openshift.io cluster \
+         -p '{"spec":{"mastersSchedulable":true}}' --type=merge
+      register: cluster_patched
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} machineset'
+      shell: >
+         {{ openshift_cli }} get machineset --no-headers -n openshift-machine-api | grep -i infra | awk '{print $1}'
+      ignore_errors: yes
+      register: infra_machineset
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} machineset scale'
+      command: >
+         {{ openshift_cli }} scale machineset {{ item }} --replicas=0 -n openshift-machine-api
+      loop: "{{ infra_machineset.stdout_lines }}"
+      when:
+        - infra_machineset is defined
+        - infra_machineset.rc is defined and infra_machineset.rc == 0
+        - infra_machineset.stdout_lines is defined and infra_machineset.stdout_lines != ""
+      register: infra_machineset_scaled
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} machineset delete'
+      command: >
+         {{ openshift_cli }} delete machineset {{ item }} -n openshift-machine-api
+      loop: "{{ infra_machineset.stdout_lines }}"
+      when:
+        - infra_machineset is defined
+        - infra_machineset.rc is defined and infra_machineset.rc == 0
+        - infra_machineset.stdout_lines is defined and infra_machineset.stdout_lines != ""
+      register: infra_machineset_deleted
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} machineset workers'
+      shell: >
+         {{ openshift_cli }} get machineset --no-headers -n openshift-machine-api | grep -i worker | awk '{print $1}'
+      ignore_errors: yes
+      register: worker_machineset
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} machineset scale'
+      command: >
+         {{ openshift_cli }} scale machineset {{ item }} --replicas=0 -n openshift-machine-api
+      loop: "{{ worker_machineset.stdout_lines }}"
+      when:
+        - worker_machineset is defined
+        - worker_machineset.rc is defined and worker_machineset.rc == 0
+        - worker_machineset.stdout_lines is defined and worker_machineset.stdout_lines != ""
+      register: worker_machineset_scaled
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} machineset delete'
+      command: >
+         {{ openshift_cli }} delete machineset {{ item }} -n openshift-machine-api
+      loop: "{{ worker_machineset.stdout_lines }}"
+      when:
+        - worker_machineset is defined
+        - worker_machineset.rc is defined and worker_machineset.rc == 0
+        - worker_machineset.stdout_lines is defined and worker_machineset.stdout_lines != ""
+      register: worker_machineset_deleted
+
+    - name: '{{ ansible_name_module }} | {{ module }} | {{ openshift_cli }} delete'
+      command: >
+         {{ openshift_cli }} delete service router-default -n openshift-ingress --wait=false
+      register: router_deleted
+
