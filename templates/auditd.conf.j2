@@ -1,133 +1,66 @@
-### The file will be placed in /etc/audit/rules.d/audit.rules and used to overwrite auditd conf
-## First rule - delete all
--D
+#
+# This file controls the configuration of the audit daemon
+#
 
-## Increase the buffers to survive stress events.
-## Make this bigger for busy systems
--b 8192
-
-## This determine how long to wait in burst of events
---backlog_wait_time 60000
-
-## Set failure mode to syslog
--f 1
-
-{% if make_audit_rules_immutable is defined and make_audit_rules_immutable | bool %}
-## Make the auditd Configuration Immutable
--e 2
+local_events = yes
+write_logs = yes
+log_file = /var/log/audit/audit.log
+log_group = root
+log_format = ENRICHED
+flush = INCREMENTAL_ASYNC
+freq = 50
+max_log_file = 8
+num_logs = 5
+priority_boost = 4
+name_format = NONE
+##name = mydomain
+max_log_file_action = ROTATE
+{% if make_audit_data_retention_space_left is defined and make_audit_data_retention_space_left | bool  %}
+## Configure auditd space_left on Low Disk Space
+space_left = {{ audit_data_retention_space_left }} 
+{% else %}
+space_left = 75
+{% endif %}
+{% if make_audit_data_retention_space_left_action is defined and make_audit_data_retention_space_left_action | bool  %}
+## Configure auditd space_left Action on Low Disk Space
+space_left_action = {{ audit_data_retention_space_left_action }} 
+{% else %}
+space_left_action = SYSLOG
+{% endif %}
+verify_email = yes
+action_mail_acct = root
+admin_space_left = 50
+{% if make_audit_data_retention_admin_space_left_action is defined and make_audit_data_retention_admin_space_left_action | bool  %}
+## Configure auditd admin_space_left Action on Low Disk Space
+admin_space_left_action = {{ audit_data_retention_admin_space_left_action }}
+{% else %}
+admin_space_left_action = SUSPEND
+{% endif %}
+{% if make_audit_data_disk_full_action is defined and make_audit_data_disk_full_action | bool  %}
+## Configure auditd Disk Full Action when Disk Space Is Full
+disk_full_action = {{ audit_data_disk_full_action }}
+{% else %}
+disk_full_action = SUSPEND
+{% endif %}
+{% if make_audit_data_disk_error_action is defined and make_audit_data_disk_error_action | bool  %}
+## Configure auditd Disk Error Action on Disk Error
+disk_error_action = {{ audit_data_disk_error_action }}
+{% else %}
+disk_error_action = SUSPEND
 {% endif %}
 
-{% if make_audit_kernel_module_loading_delete is defined and make_audit_kernel_module_loading_delete | bool  %}
-## Ensure auditd Collects Information on Kernel Module Unloading – delete_module
--a always,exit -F arch=ARCH -S delete_module -F key=modules
-{% endif %}
-
-{% if make_audit_kernel_module_loading_finit is defined and make_audit_kernel_module_loading_finit | bool  %}
-## Ensure auditd Collects Information on Kernel Module Loading and Unloading – finit_module
--a always,exit -F arch=ARCH -S finit_module -F key=modules
-
-{% endif %}
-
-{% if make_audit_kernel_module_loading_init is defined and make_audit_kernel_module_loading_init | bool  %}
-## Ensure auditd Collects Information on Kernel Module Loading and Unloading – finit_module
--a always,exit -F arch=ARCH -S init_module -F key=modules
-
-{% endif %}
-
-{% if make_audit_mac_modification is defined and make_audit_mac_modification | bool  %}
-## Record Events that Modify the System's Mandatory Access Controls
--w /etc/selinux/ -p wa -k MAC-policy
-
-{% endif %}
-
-{% if make_audit_privileged_commands is defined and make_audit_privileged_commands | bool  %}
-## Ensure auditd Collects Information on the Use of Privileged Commands
--a always,exit -F path=/usr/bin/at -F auid>=1000 -F auid!=unset -F key=privileged
-
-{% endif %}
-
-{% if make_audit_session_events is defined and make_audit_session_events | bool  %}
-## Record Attempts to Alter Process and Session Initiation Information
--w /var/run/utmp -p wa -k session
--w /var/log/btmp -p wa -k session
--w /var/log/wtmp -p wa -k session
-
-{% endif %}
-
-{% if make_audit_sysadmin_actions is defined and make_audit_sysadmin_actions | bool  %}
-## Ensure auditd Collects System Administrator Actions
--w /etc/sudoers -p wa -k actions
--w /etc/sudoers.d/ -p wa -k actions
-
-{% endif %}
-
-{% if make_audit_time_adjtimex is defined and make_audit_time_adjtimex | bool  %}
-## Record attempts to alter time through adjtimex
-#-a always,exit -F arch=b64 -S adjtimex -F key=audit_time_rules
--a always,exit -F arch=b64 -S adjtimex,settimeofday -F key=audit_time_rules
-
-{% endif %}
-
-{% if make_audit_time_clock_settime is defined and make_audit_time_clock_settime | bool  %}
-## Record Attempts to Alter Time Through clock_settime
--a always,exit -F arch=b64 -S clock_settime -F a0=0x0 -F key=time-change
-
-{% endif %}
-
-{% if make_audit_time_settimeofday is defined and make_audit_time_settimeofday | bool  %}
-## Record attempts to alter time through settimeofday
--a always,exit -F arch=b64 -S settimeofday -F key=audit_time_rules
-
-{% endif %}
-
-{% if make_audit_time_stime is defined and make_audit_time_stime | bool  %}
-## Record Attempts to Alter Time Through stime
--a always,exit -F arch=b32 -S stime -F key=audit_time_rules
-
-{% endif %}
-
-{% if make_audit_time_watch_localtime is defined and make_audit_time_watch_localtime | bool  %}
-## Record Attempts to Alter the localtime File
--w /etc/localtime -p wa -k audit_time_rules
-
-{% endif %}
-
-{% if make_audit_unsuccessful_file_modification_open_by_handle is defined and make_audit_unsuccessful_file_modification_open_by_handle | bool  %}
-## Ensure auditd Unauthorized Access Attempts To open_by_handle_at Are Ordered Correctly
--a always,exit -F arch=b64 -S open_by_handle_at -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
--a always,exit -F arch=b64 -S open_by_handle_at -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
--a always,exit -F arch=b64 -S open_by_handle_at -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
--a always,exit -F arch=b64 -S open_by_handle_at -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
--a always,exit -F arch=b64 -S open_by_handle_at -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
--a always,exit -F arch=b64 -S open_by_handle_at -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
-
-{% endif %}
-
-{% if make_audit_unsuccessful_file_modification_open_rule_order is defined and make_audit_unsuccessful_file_modification_open_rule_order | bool  %}
-## Ensure auditd Rules For Unauthorized Attempts To open Are Ordered Correctly
--a always,exit -F arch=b64 -S open -F a1&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
--a always,exit -F arch=b64 -S open -F a1&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
--a always,exit -F arch=b64 -S open -F a1&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
--a always,exit -F arch=b64 -S open -F a1&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
--a always,exit -F arch=b64 -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
--a always,exit -F arch=b64 -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
-
-{% endif %}
-
-{% if make_audit_unsuccessful_file_modification_openat_rule_order is defined and make_audit_unsuccessful_file_modification_openat_rule_order | bool  %}
-## Ensure auditd Rules For Unauthorized Attempts To openat Are Ordered Correctly
--a always,exit -F arch=b64 -S openat -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
--a always,exit -F arch=b64 -S openat -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
--a always,exit -F arch=b64 -S openat -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
--a always,exit -F arch=b64 -S openat -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
--a always,exit -F arch=b64 -S openat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
--a always,exit -F arch=b64 -S openat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
-
-{% endif %}
-
-{% if make_directory_access_var_log_audit is defined and make_directory_access_var_log_audit | bool  %}
-## Record Access Events to Audit Log Directory
--a always,exit -F dir=/var/log/audit/ -F perm=r -F auid>=1000 -F auid!=unset -F key=access-audit-trail
-
-{% endif %}
+use_libwrap = yes
+##tcp_listen_port = 60
+tcp_listen_queue = 5
+tcp_max_per_addr = 1
+##tcp_client_ports = 1024-65535
+tcp_client_max_idle = 0
+transport = TCP
+krb5_principal = auditd
+##krb5_key_file = /etc/audit/audit.key
+distribute_network = no
+q_depth = 400
+overflow_action = SYSLOG
+max_restarts = 10
+plugin_dir = /etc/audit/plugins.d
 
