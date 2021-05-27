@@ -1,0 +1,32 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  annotations:
+  labels:
+    machineconfiguration.openshift.io/role: {{ node_role }} 
+  name: 99-z{{ node_role }}{{ (auditd_conf_path | replace('/','-')).split('.')[0] }}-conf
+spec:
+  config:
+    ignition:
+      version: {{ ignition_config_version | d('3.2.0') }}
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,{{ auditd_conf_data | b64encode }}
+          verification: {}
+        filesystem: root
+        mode: 420
+        overwrite: true
+        path: {{ auditd_conf_path | default('/etc/audit/auditd.conf') }}
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,{{ auditd_rule_conf_data | b64encode }}
+          verification: {}
+        filesystem: root
+        mode: 420
+        overwrite: true
+        path: {{ auditd_rule_conf_path | default('/etc/audit/rules.d/audit.rules') }}
+  extensions: null
+  fips: {{ fips_enabled | default('false') }}
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: "" 

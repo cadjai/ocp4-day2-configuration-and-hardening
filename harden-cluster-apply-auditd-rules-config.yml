@@ -1,0 +1,82 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-apply-auditd-rules-config.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3.6
+    module: "Apply Auditd Rules Config"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+     - name: '{{ ansible_name_module }} | Apply auditd Configuration'
+      block:
+        - name: '{{ ansible_name_module }} | get node roles'
+          shell: >
+            {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
+          register: node_roles
+
+        - name: '{{ ansible_name_module }} | template | Copy auditd config to staging location'
+          template:
+            src: "templates/auditd.conf.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/auditd.conf"
+            force: yes
+          register: auditd_conf_copied
+
+        - name: '{{ ansible_name_module }} | command:cat | Load auditd_conf'
+          shell: cat {{ staging_dir | d('/tmp', true) }}/auditd.conf
+          when:
+            - auditd_conf_copied is defined
+          register: auditd_conf_loaded
+
+        - name: '{{ ansible_name_module }} | template | Copy auditd rule config to staging location'
+          template:
+            src: "templates/auditd.rules.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/auditd.rules"
+            force: yes
+          register: auditd_rules_conf_copied
+
+        - name: '{{ ansible_name_module }} | command:cat | Load auditd_conf'
+          shell: cat {{ staging_dir | d('/tmp', true) }}/auditd.rules
+          when:
+            - auditd_rules_conf_copied is defined
+          register: auditd_rules_conf_loaded
+
+        - name: '{{ ansible_name_module }} | template | Copy auditd config MC to staging location'
+          vars:
+            auditd_conf_data: "{{ auditd_conf_loaded.stdout }}"
+            auditd_rule_conf_data: "{{ auditd_rules_conf_loaded.stdout }}"
+            node_role: "{{ item }}"
+          template:
+            src: "templates/auditd-conf-mc.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/auditd-conf-mc-{{ item }}.yml"
+            force: yes
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - auditd_conf_loaded is defined
+            - auditd_conf_loaded.rc is defined and auditd_conf_loaded.rc == 0
+            - auditd_conf_loaded.stdout is defined and auditd_conf_loaded.stdout != ""
+            - auditd_rules_conf_loaded is defined
+            - auditd_rules_conf_loaded.rc is defined and auditd_rules_conf_loaded.rc == 0
+            - auditd_rules_conf_loaded.stdout is defined and auditd_rules_conf_loaded.stdout != ""
+          register: auditd_mc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy auditd config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/auditd-conf-mc-{{ item }}.yml
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - auditd_mc_copied is defined
+          register: auditd_mc_deployed
+

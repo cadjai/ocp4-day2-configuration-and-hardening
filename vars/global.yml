@@ -265,6 +265,44 @@ configure_fileintegrity: 'true'
 # End of hardening fileintegrity operator variables
 #####################################################################################################
 
+######## hardening auditd config vars
+make_audit_data_retention_space_left: 'true'
+audit_data_retention_space_left: '1000'
+make_audit_data_retention_space_left_action: 'true'
+audit_data_retention_space_left_action: 'EMAIL'
+make_audit_data_retention_admin_space_left_action: 'true'
+audit_data_retention_admin_space_left_action: 'SUSPEND'
+make_audit_data_disk_full_action: 'true'
+audit_data_disk_full_action: 'SUSPEND'
+make_audit_data_disk_error_action: 'true'
+audit_data_disk_error_action: 'SUSPEND'
+
+make_audit_rules_immutable: 'true'
+make_audit_kernel_module_loading_delete: 'true'
+make_audit_kernel_module_loading_finit: 'true'
+make_audit_kernel_module_loading_init: 'true'
+make_audit_mac_modification: 'true'
+make_audit_privileged_commands: 'true'
+make_audit_session_events: 'true'
+make_audit_sysadmin_actions: 'true'
+make_audit_time_adjtimex: 'true'
+make_audit_time_clock_settime: 'true'
+make_audit_time_settimeofday: 'true'
+make_audit_time_stime: 'true'
+make_audit_time_watch_localtime: 'true'
+make_audit_unsuccessful_file_modification_open_by_handle: 'true'
+make_audit_unsuccessful_file_modification_open_rule_order: 'true'
+make_audit_unsuccessful_file_modification_openat_rule_order: 'true'
+make_directory_access_var_log_audit: 'true'
+auditd_conf_path: '/etc/audit/auditd.conf'
+auditd_rule_conf_path: '/etc/audit/rules.d/audit.rules'
+fips_enabled: 'true'
+
+
+#####################################################################################################
+# End of hardening auditd variables
+#####################################################################################################
+
 ######## Upstream DNS Config vars
 upstream_dns_servers:
   my-sso:
