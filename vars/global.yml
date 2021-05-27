@@ -249,9 +249,9 @@ auto_create_remediation: 'true'
 auto_apply_remediate: 'true'
 enable_auto_remediate: 'false'
 compliance_scan_schedule: '0 1 * * *'
-compliance_name: 'cis-compliance'
-platform_node_profile_name: 'ocp4-cis-node'
-platform_profile_name: 'ocp4-cis'
+compliance_name: 'nist-moderate'
+platform_node_profile_name: 'rhcos4-nist-moderate-node'
+platform_profile_name: 'ocp4-nist-moderate'
 
 #####################################################################################################
 # End of hardening compliance operator variables
