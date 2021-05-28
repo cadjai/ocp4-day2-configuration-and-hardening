@@ -1,0 +1,32 @@
+- name: ' Konductor | Provision UPI Infra | harden-update-ignition-version-on-compliance-remediation.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Lookup remediations and update ignition version"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login 
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get remediation '
+      shell: >
+        {{ openshift_cli }} get complianceremediations.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_remediations
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Patch ignition version on remediation'
+      shell: >
+         {{ openshift_cli }} patch complianceremediations.compliance.openshift.io {{ item }} --type=merge -p '{"spec":{"current":{"object":{"spec":{"config":{"ignition":{"version":"{{ ignition_config_version }}"}}}}}}}'
+      loop: "{{ compliance_remediations.stdout_lines }}"
+      when:
+        - ignition_config_version is defined
+        - not ignition_config_version == '' 
+        - compliance_remediations is defined
+        - compliance_remediations.stdout_lines is defined
+        - compliance_remediations.stdout_lines | length > 0
+      register: compliance_remediations_patched
