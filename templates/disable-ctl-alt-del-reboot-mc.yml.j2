@@ -1,0 +1,26 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  annotations:
+  labels:
+    machineconfiguration.openshift.io/role: {{ node_role }} 
+  name: 75-{{ platform_node_profile_name }}-{{ node_role }}{{ (ctl_alt_del_target_path | replace('/','-')).split('.')[0] }}-conf
+spec:
+  config:
+    ignition:
+      version: {{ ignition_config_version | d('3.2.0') }}
+    systemd:
+      units:
+      - name: ctrl-alt-del.target
+        mask: true
+        contents: ''
+   # storage:
+   #   links:
+   #     path: {{ ctl_alt_del_target_path | default('/etc/systemd/system/ctrl-alt-del.target') }}
+   #     target: /dev/null 
+   #     hard: false
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: "" 

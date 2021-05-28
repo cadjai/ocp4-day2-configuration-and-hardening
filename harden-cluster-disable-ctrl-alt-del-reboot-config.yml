@@ -1,0 +1,48 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-disable-ctrl-alt-del-reboot-config.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3.6
+    module: "Disable Ctrl Alt Del Reboot"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Disable Ctrl Alt Del Reboot Configuration'
+      block:
+        - name: '{{ ansible_name_module }} | get node roles'
+          shell: >
+            {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
+          register: node_roles
+
+        - name: '{{ ansible_name_module }} | template | Copy Ctrl Alt Del Reboot config to staging location'
+          vars:
+            ctl_alt_del_target_path: "/etc/systemd/system/ctrl-alt-del.target"
+            node_role: "{{ item }}"
+          template: 
+            src: "templates/disable-ctl-alt-del-reboot-mc.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/disable-ctl-alt-del-reboot-mc-{{ item }}.yml"
+            force: yes
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+          register: ctl-alt-del-reboot_mc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy Ctrl Alt Del Reboot config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/disable-ctl-alt-del-reboot-mc-{{ item }}.yml 
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - ctl-alt-del-reboot_mc_copied is defined
+          register: ctl-alt-del-reboot_mc_deployed
