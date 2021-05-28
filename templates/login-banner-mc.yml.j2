@@ -4,7 +4,7 @@ metadata:
   annotations:
   labels:
     machineconfiguration.openshift.io/role: {{ node_role }} 
-  name: 99-z{{ node_role }}{{ login_banner_path | replace('/','-') }}-conf
+  name: 75-{{ platform_node_profile_name }}-{{ node_role }}{{ login_banner_path | replace('/','-') }}-conf
 spec:
   config:
     ignition:
