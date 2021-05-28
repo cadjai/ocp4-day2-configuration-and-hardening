@@ -1,0 +1,41 @@
+- name: ' Konductor | Provision UPI Infra | harden-get-manual-remediation-compliance-results.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Lookup  findings"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login 
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get manual findings '
+      shell: >
+        {{ openshift_cli }} get compliancecheckresults -l 'compliance.openshift.io/check-status in (FAIL),!compliance.openshift.io/automated-remediation' -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_findings_manual
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get manual findings description'
+      shell: >
+        {{ openshift_cli }} get compliancecheckresults {{ item }} -o=jsonpath='{.description}' -n openshift-compliance | head -n +1
+      loop: "{{ compliance_findings_manual.stdout_lines }}"
+      register: compliance_findings_manual_description
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get all rules'
+      shell: >
+        {{ openshift_cli }} get rules.compliance -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_rules_all
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get all RHCOS4 rules'
+      shell: >
+        {{ openshift_cli }} get rules.compliance -l 'compliance.openshift.io/profile-bundle=rhcos4' -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_rules_rhcos4
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get all OCP4 rules'
+      shell: >
+        {{ openshift_cli }} get rules.compliance -l 'compliance.openshift.io/profile-bundle=ocp4' -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_rules_ocp4
