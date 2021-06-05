@@ -1,0 +1,181 @@
+- name: ' Konductor | Provision UPI Infra | harden-export-compliance-scan-results.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Extract Scan Results"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | existing scan extraction pods if any'
+      shell: >
+        {{ openshift_cli }} get po --no-headers -n openshift-compliance | grep extract | awk '{print $1}'
+      register: existing_scan_extraction_pods
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | existing scan extraction pods if any'
+      command: >
+        {{ openshift_cli }} delete po {{ item }} -n openshift-compliance 
+      loop: "{{ existing_scan_extraction_pods.stdout_lines }}"
+      when:
+        - existing_scan_extraction_pods is defined
+        - existing_scan_extraction_pods.stdout_lines is defined
+        - existing_scan_extraction_pods.stdout_lines | length > 0
+      register: existing_scan_extraction_pods_removed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get scan pvc '
+      shell: >
+        {{ openshift_cli }} get pvc -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_results_pvcs
+
+    - name: '{{ ansible_name_module }} | template | Create Compliance result extrat pod definition for each pvc type'
+      template:
+        src: "templates/compliance-scan-results-extract-pod.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item }}-compliance-scan-results-extract-pod.yml"
+        force: yes
+      loop: "{{ compliance_results_pvcs.stdout_lines }}"
+      vars:
+        pvc_mount_prefix: "{{ item.split('-')[2] if 'rhcos' in item else item.split('-')[0] }}"
+        pvc_name: '{{ item }}'
+      when:
+        - compliance_results_pvcs is defined
+        - compliance_results_pvcs.stdout_lines is defined
+        - compliance_results_pvcs.stdout_lines | length > 0
+      register: pod_definition_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | create export pods'
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item }}-compliance-scan-results-extract-pod.yml -n openshift-compliance 
+      loop: "{{ compliance_results_pvcs.stdout_lines }}"
+      when:
+        - compliance_results_pvcs is defined
+        - compliance_results_pvcs.stdout_lines is defined
+        - compliance_results_pvcs.stdout_lines | length > 0
+        - pod_definition_copied is defined
+      register: pod_definition_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for the pods to be in Running mode'
+      wait_for:
+        timeout: 10
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | scan extraction pods'
+      shell: >
+        {{ openshift_cli }}  get po --no-headers -n openshift-compliance | grep extract | awk '{print $1}'
+      register: scan_extraction_pods
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | scan extraction pods volumes'
+      command: >
+        {{ openshift_cli }}  get po {{ item }} -o=jsonpath='{.spec.containers[0].volumeMounts[0].mountPath}{"\n"}' -n openshift-compliance
+      loop: "{{ scan_extraction_pods.stdout_lines }}"
+      when:
+        - compliance_results_pvcs is defined
+        - compliance_results_pvcs.stdout_lines is defined
+        - compliance_results_pvcs.stdout_lines | length > 0
+        - scan_extraction_pods is defined
+        - scan_extraction_pods.stdout_lines is defined
+        - scan_extraction_pods.stdout_lines | length > 0 
+      register: scan_extraction_volumes
+
+    - name: '{{ ansible_name_module }} | Retrieve cluster_name'
+      command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_name
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the Scan result export directory prefix'
+      set_fact:
+        scan_export_dir_prefix: "{{ cluster_name }}-{{ lookup('pipe', 'date +%Y%m%d') }}"
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | file:directory | Ensure the Scan result export directory exist'
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: 0755
+      loop:
+        - "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}"
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} cp | extract scan results from pods'
+      command: >
+        {{ openshift_cli }} cp {{ item.item }}:{{ item.stdout }} {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }} -n openshift-compliance
+      loop: "{{ scan_extraction_volumes.results }}"
+      when:
+        - scan_extraction_volumes.results is defined
+        - scan_extraction_volumes.results | length > 0 
+        - item.item is defined and not item.item == ''
+        - item.stdout is defined and not item.stdout == ''
+      register: scan_extraction_results_exported
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | scan extraction pods '
+      command: >
+        {{ openshift_cli }} delete po {{ item }} -n openshift-compliance 
+      loop: "{{ existing_scan_extraction_pods.stdout_lines }}"
+      when:
+        - scan_extraction_pods is defined
+        - scan_extraction_pods.stdout_lines is defined
+        - scan_extraction_pods.stdout_lines | length > 0
+        - scan_extraction_results_exported is defined
+      register: scan_extraction_pods_removed
+
+    - name: '{{ ansible_name_module }} | unpack the bzip file if applicable '
+      when:
+        - unpack_scan_arf is defined
+        - unpack_scan_arf | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:which | check if bzip2 is installed '
+          command: which bzip2
+          ignore_errors: yes
+          failed_when:
+            - bzip_binary_check.rc > 0
+            - "not 'no bzip2' in bzip_binary_check.stderr"
+          register: bzip_binary_check
+
+        - name: '{{ ansible_name_module }} | assert | ensure that bzip2 is installed '
+          assert:
+            that:
+              - bzip_binary_check is defined
+              - bzip_binary_check.rc is defined
+              - bzip_binary_check.rc == 0
+            msg: "The bzip2 binary is required on the controller to unpack the files"
+
+        - name: '{{ ansible_name_module }} | find | locate bzip files '
+          find:
+            paths: "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}"
+            recurse: yes
+            patterns: '*.bzip2'
+          register: scan_arf_bzip_files  
+
+        - name: '{{ ansible_name_module }} | find | locate bzip file dirs '
+          find:
+            paths: "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}"
+            recurse: no
+            file_type: directory
+          register: scan_arf_bzip_dirs  
+
+        - name: '{{ ansible_name_module }} | file:directory | Ensure the Scan result bzip directory exist'
+          file:
+            path: "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/bzip/{{ item.path.split('/')[-1] }}"
+            state: directory
+            mode: 0755
+          loop: "{{ scan_arf_bzip_dirs.files }}"
+          when:
+            - scan_arf_bzip_dirs.files is defined
+            - "not 'lost' in item.path.split('/')[-1]"
+          register: scan_arf_bzip_dirs_created 
+
+        - name: '{{ ansible_name_module }} | command:tar | original operator bundle on registry '
+          #bzcat {{ item.path }} \
+          #    > {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/bzip/{{ (item.path | dirname).split('/')[-1] }}
+          command: >
+            tar -xvjf {{ item.path }} \
+               -C {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/bzip/{{ (item.path | dirname).split('/')[-1] }}
+          loop: "{{ scan_arf_bzip_files.files }}"
+          register: scan_arf_unpack_out
+
