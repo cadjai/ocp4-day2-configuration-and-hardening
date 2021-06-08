@@ -1,0 +1,48 @@
+- name: ' Konductor | Provision UPI Infra | harden-remove-kubeadmin-user.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Remove kubeadmin user"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | remove default kubeadmin user'
+      block:
+        - name: '{{ ansible_name_module }} | {{ openshift_cli }} adm policy | get list of cluster adms'
+          shell: >
+            {{ openshift_cli }} adm policy who-can admin cluster -o=jsonpath='{.users}{"\n"}' | jq .[] | grep -v system
+          failed_when:
+            - clusteradmins.rc is defined 
+            - clusteradmins.rc > 0 
+            - clusteradmins.stdout is defined 
+            - clusteradmins.stdout != ''
+            - " not 'cluster' in clusteradmins.stderr "  
+          register: clusteradmins
+
+        - name: '{{ ansible_name_module }} | {{ openshift_cli }} | get kubeadmin user secret'
+          shell: >
+            {{ openshift_cli }} get secret -n kube-system --no-headers | grep kubeadmin | awk '{print $1}'
+          register: kubeadmin_user
+
+        - name: '{{ ansible_name_module }} |{{ openshift_cli }}  delete:secret | delete kubeadmin user secret'
+          shell: >
+            {{ openshift_cli }} delete secret {{ kubeadmin_user.stdout }}  -n kube-system
+          when:
+            - clusteradmins.rc == 0
+            - clusteradmins.stdout is defined 
+            - clusteradmins.stdout != ''
+            - kubeadmin_user is defined
+            - kubeadmin_user.rc == 0
+            - kubeadmin_user.stdout is defined
+            - kubeadmin_user.stdout != '' 
+          register: kubeadmin_user_deleted
+
