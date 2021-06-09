@@ -1,0 +1,32 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-apply-allowed-registries-config.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Apply Allowed Registry Config"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Apply Allowed  Registry Configuration'
+      block:
+        - name: '{{ ansible_name_module }} | template | Copy allowed registry config to staging location'
+          template: 
+            src: "templates/image-config-cr.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/image-config-cr.yml"
+            force: yes
+          register: allowed_registry_conf_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | allowed registry config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/image-config-cr.yml 
+          when:
+            - allowed_registry_conf_copied is defined
+            - allowed_registry_conf_copied.dest is defined
+            - allowed_registry_conf_copied.dest != ''
+          register: allowed_registry_conf_applied

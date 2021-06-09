@@ -1,0 +1,20 @@
+apiVersion: config.openshift.io/v1
+kind: Image
+metadata:
+  annotations:
+    release.openshift.io/create-only: "true"
+  name: cluster
+spec:
+  allowedRegistriesForImport:
+    - domainName: {{ registry_host_fqdn }}
+      insecure: {{ isexternal_registry_insecure | default('false') }}
+  registrySources:
+{% if allowed_registries is defined and allowed_registries | length > 0 %}
+    allowedRegistries:
+    {{ allowed_registries | to_yaml | indent(4, false) }}
+{% elif blocked_registries is defined and blocked_registries | length > 0 %}
+    blockedRegistries:
+    {{ blocked_registries | to_nice_yaml | indent(4, false) }}
+{% endif %}
+status:
+  internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
