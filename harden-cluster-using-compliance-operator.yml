@@ -110,7 +110,7 @@
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | annotate scans '
           command: >
-            {{ openshift_cli }} annotate compliancescans/{{ item }} compliance.openshift.io/rescan=
+            {{ openshift_cli }} annotate compliancescans.compliance.openshift.io {{ item }} compliance.openshift.io/rescan= -n openshift-compliance 
           loop: "{{ compliance_scans.stdout_lines }}"
           when:
             - compliance_scans is defined
