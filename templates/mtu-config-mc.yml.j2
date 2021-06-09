@@ -1,0 +1,40 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  annotations:
+  labels:
+    machineconfiguration.openshift.io/role: {{ node_role }} 
+  name: 99-z{{ node_role }}{{ mtu_config_path | replace('/','-') }}-conf
+spec:
+  config:
+    ignition:
+      version: {{ ignition_config_version | d('3.2.0') }}
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,{{ mtu_config_data | b64encode }}
+          verification: {}
+        filesystem: root
+        mode: 420
+        overwrite: true
+        path: {{ mtu_config_path | default('/etc/NetworkManager/dispatcher.d/30-mtu') }}
+    systemd:
+      units:
+        - contents: |
+            [Unit]
+            Requires=systemd-udevd.target
+            After=systemd-udevd.target
+            Before=NetworkManager.service
+            DefaultDependencies=no
+            [Service]
+            Type=oneshot
+            ExecStart=/usr/sbin/restorecon {{ mtu_config_path | default('/etc/NetworkManager/dispatcher.d/30-mtu') }}
+            [Install]
+            WantedBy=multi-user.target
+          name: one-shot-mtu.service
+          enabled: true
+  extensions: null
+  fips: {{ fips_enabled | default('false') }}
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: "" 
