@@ -235,7 +235,7 @@ issuer_url: "{{ vault_issuer_url }}"
 
 
 ####### banner related vairables
-banner_name: 'unclass'
+banner_name: 'classification-banner'
 banner_text: 'UNCLASSIFIED'
 banner_color: '#ffffff'
 banner_background_color: '#006400'
