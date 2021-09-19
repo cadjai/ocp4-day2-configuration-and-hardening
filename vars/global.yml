@@ -176,6 +176,62 @@ operators_to_deploy:
     es_apply_toleration: 'true'
     es_apply_nodeselector: 'true'
 
+  costmanagement-metrics-operator:
+    group_name: 'costmanagement-metrics-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: 'stable'
+    csv_version: 'costmanagement-metrics-operator.1.1.0'
+    deploy_namespace: 'costmanagement-metrics-operator'
+    target_namespace: 'costmanagement-metrics-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'costmanagement-metrics-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.7'
+
+  jupyterlab-operator:
+    group_name: 'jupyterlab-operator-group'
+    catalog_name: 'community-redhat-operator-catalog'
+    sub_channel: 'stable'
+    csv_version: 'jupyterlab-operator.v1.0.0'
+    deploy_namespace: 'openshift-operators'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'jupyterlab-operator'
+    deploy: 'true'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'false'
+
+  keycloak-operator:
+    group_name: 'keycloak-operator-group'
+    catalog_name: 'community-redhat-operator-catalog'
+    sub_channel: 'alpha'
+    csv_version: 'keycloak-operator.v13.0.1'
+    deploy_namespace: 'keycloak-operator'
+    target_namespace: 'keycloak-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'keycloak-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+
+  rhsso-operator:
+    group_name: 'rhsso-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: 'alpha'
+    csv_version: 'rhsso-operator.7.4.9'
+    deploy_namespace: 'rhsso-operator'
+    target_namespace: 'rhsso-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'rhsso-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.7'
+
 ################## Infra nodes configuration #################################
 infranodes:
   infra-az1:

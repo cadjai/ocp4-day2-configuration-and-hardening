@@ -9,3 +9,6 @@ spec:
   installPlanApproval: Automatic
   source: {{ operator_catalog_name }}
   sourceNamespace: openshift-marketplace
+{% if operator_csv_version is defined and operator_csv_version != '' %}
+  startingCSV: {{ operator_csv_version }}
+{% endif %}
