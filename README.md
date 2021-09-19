@@ -72,6 +72,7 @@ This role uses the https://github.com/cadjai/config-OpenShift-Lifecycle-Manager-
 Installation and Usage
 -----------------------
 Clone the repository to where you want to run this from and make sure you can connect to your cluster using the CLI .
+Ensure you install all requirements using `ansible-galaxy install -r requirements.yml --force` before performing the next steps.
 You will also need to have cluster-admin run in order to run the playbook since the cron job need to run privileged.
 Finally before running the playbook make sure to set and update the variables as appropriate to your use case.
 

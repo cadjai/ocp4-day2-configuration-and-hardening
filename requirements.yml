@@ -6,4 +6,7 @@ roles:
   - src: https://github.com/cadjai/ocp-cluster-login.git 
     scm: git
     name: ocp-cluster-login
+  - src: https://github.com/cadjai/deploy-operators-from-olm.git 
+    scm: git
+    name: deploy-operators-from-olm 
 
