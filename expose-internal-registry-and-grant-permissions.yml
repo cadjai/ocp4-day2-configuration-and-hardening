@@ -1,0 +1,125 @@
+- name: ' Konductor | Provision UPI Infra | expose-internal-registry-and-grant-permissions.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Configure Internal Registry"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login 
+
+  tasks:
+    ################## Expose internal registry Route ###################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | expose internal registry '
+      command: >
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}'
+      register: registry_patched
+
+   ################## Add registry-viewer role to enable image read for the authenticate user to internal registry ###################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} policy | grant registry-viewer to user '
+      when:
+        - registry_readers is defined
+        - registry_readers | length > 0
+      command: >
+        {{ openshift_cli }} policy add-role-to-user registy-viewer '{{ item }}'
+      loop: "{{ registry_users }}"
+      register: registry_viewer_added
+
+   ################## Add registry-editor role to enable image edit for the authenticate user to internal registry ###################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} policy | grant registry-editor to user '
+      when:
+        - registry_editors is defined
+        - registry_editors | length > 0
+      command: >
+        {{ openshift_cli }} policy add-role-to-user registry-editor '{{ item }}'
+      loop: "{{ registry_users }}"
+      register: registry_viewer_added
+
+   ################## Add registry-viewer role to enable image read for the authenticate user group to internal registry ###################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} policy | grant registry-viewer to group '
+      when:
+        - registry_reader_groups is defined
+        - registry_reader_groups | length > 0
+      command: >
+        {{ openshift_cli }} policy add-role-to-group registy-viewer '{{ item }}'
+      loop: "{{ registry_groups }}"
+      register: registry_viewer_group_added
+
+   ################## Add registry-editor role to enable image read for the authenticate user group to internal registry ###################
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} policy | grant registry-editor to group '
+      when:
+        - registry_editor_groups is defined
+        - registry_editor_groups | length > 0
+      command: >
+        {{ openshift_cli }} policy add-role-to-group registry-editor '{{ item }}'
+      loop: "{{ registry_groups }}"
+      register: registry_editor_group_added
+
+   ################## Add Image Puller role to enable direct image pull from internal registry ###################
+    - name: Add Image Puller Role to the default SA in the namespace specified
+      command: >
+        {{ openshift_cli }} create rolebinding image-puller-{{ item }}-{{ default_service_account | default('default') }} \
+          --clusterrole='system:image-puller' \
+          --serviceaccount={{ item }}:{{ default_service_account | default('default') }} \
+          -n {{ item }}
+      loop: "{{ registry_image_pull_projects }}"
+      when:
+         - registry_image_pull_projects is defined
+         - registry_image_pull_projects | length > 0
+      failed_when:
+        - image_puller_access_granted.rc >= 1
+        - not 'AlreadyExists' in image_puller_access_granted.stderr
+      register: image_puller_access_granted
+
+   ################## Add Image Pusher role to enable direct image push to internal registry namespace ###################
+    - name: Add Image Pusher Role to the default SA in the namespace specified
+      command: >
+        {{ openshift_cli }} create rolebinding image-puller-{{ item }}-{{ default_service_account | default('default') }} \
+          --clusterrole='system:image-pusher' \
+          --serviceaccount={{ item }}:{{ default_service_account | default('default') }} \
+          -n {{ item }}
+      loop: "{{ registry_image_pull_projects }}"
+      when:
+         - registry_image_pusher_projects is defined
+         - registry_image_pusher_projects | length > 0
+      failed_when:
+        - image_pusher_access_granted.rc >= 1
+        - not 'AlreadyExists' in image_pusher_access_granted.stderr
+      register: image_pusher_access_granted
+
+   ################## Add Image Registry role to enable direct image push to internal registry namespace ###################
+    - name: Add Image Registry Role to the default SA in the namespace specified
+      command: >
+        {{ openshift_cli }} create rolebinding image-puller-{{ item }}-{{ default_service_account | default('default') }} \
+          --clusterrole='system:registry' \
+          --serviceaccount={{ item }}:{{ default_service_account | default('default') }} \
+          -n {{ item }}
+      loop: "{{ registry_image_registry_projects }}"
+      when:
+         - registry_image_registry_projects is defined
+         - registry_image_registry_projects | length > 0
+      failed_when:
+        - image_registry_access_granted.rc >= 1
+        - not 'AlreadyExists' in image_registry_access_granted.stderr
+      register: image_registry_access_granted
+
+   ################## Add Image builder role to enable direct image push and image build to internal registry ###################
+    - name: Add Image Builder Role to the default SA in the namespace specified
+      command: >
+        {{ openshift_cli }} create rolebinding image-puller-{{ item }}-{{ default_service_account | default('default') }} \
+          --clusterrole='system:image-builder' \
+          --serviceaccount={{ item }}:{{ default_service_account | default('default') }} \
+          -n {{ item }}
+      loop: "{{ registry_image_builder_projects }}"
+      when:
+         - registry_image_builder_projects is defined
+         - registry_image_builder_projects | length > 0
+      failed_when:
+        - image_builder_access_granted.rc >= 1
+        - not 'AlreadyExists' in image_builder_access_granted.stderr
+      register: image_builder_access_granted
