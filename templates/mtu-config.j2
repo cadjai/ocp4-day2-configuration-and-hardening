@@ -1,9 +1,0 @@
-#!/bin/sh
-MTU={{ node_mtu | default('1450') }}
-INTERFACE={{ default_iface | default('ens5') }}
-
-IFACE=$1
-STATUS=$2
-if [ "$IFACE" = "$INTERFACE" -a "$STATUS" = "up" ]; then
-    ip link set "$IFACE" mtu $MTU
-fi
