@@ -1,0 +1,40 @@
+- name: ' Konductor | Provision UPI Infra | set-installplan-to-manual-on-olm-operators.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Set Install Plan to Manual on deployed operators from OLM"
+    ansible_name_module: " Post Cluster Installation | Remove deployed Operators | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} whoami | check if there is vali
+d session'
+      command: >
+        {{ openshift_cli }} whoami
+      ignore_errors: yes
+      register: existing_session
+
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+      when:
+        - existing_session.rc > 0
+          
+  tasks:
+    - name: '{{ ansible_name_module }} | get all Subscriptions'
+      shell: >
+        {{ openshift_cli }} get sub -A --no-headers | awk '{print $2 " -n " $1}'
+      register: all_subs
+
+    - name: '{{ ansible_name_module }} | delete all Subscription objects'
+      command: >
+        {{ openshift_cli }} patch sub {{ item }} --type merge -p '{"spec" : {"installPlanApproval": "Manual" }}'
+      loop: "{{ all_subs.stdout_lines }}"
+      when:
+        - "not 'olm-operators' in item"
+        - "not 'global-operators' in item"
+      register: updated_subs
+
