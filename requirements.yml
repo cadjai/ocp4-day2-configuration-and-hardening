@@ -9,4 +9,7 @@ roles:
   - src: https://github.com/cadjai/deploy-operators-from-olm.git 
     scm: git
     name: deploy-operators-from-olm 
+  - src: https://github.com/cadjai/configure-oauthclient-inactivity-timeout-on-ocp4.git 
+    scm: git
+    name: config-inactivity-timeout-on-ocp4 
 
