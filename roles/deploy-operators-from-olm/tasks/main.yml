@@ -171,6 +171,24 @@
         - item.value.create_catalog is defined and item.value.create_catalog | bool
       register: op_sub_deployed
 
+################## Get Package Manifest info #####################
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | Get package manifest for each operator'
+      shell: >
+        {{ openshift_cli }} get packagemanifest {{ item.key }} -ojsonpath='{.status.channels[-1].currentCSV}{"\n"}{.status.defaultChannel}{"\n"}'
+      with_dict: "{{ operators_to_deploy }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item.key is defined and item.key != ""
+        - item.value.deploy is defined and item.value.deploy | bool
+      register: operator_pkg_info
+
+    - name: '{{ ansible_name_module }} | set_fact | Set array of package manifest info'
+      set_fact:
+        pkg_infovalues: "{{ pkg_infovalues | default([]) + [{'name': item.item.key, 'channel': item.stdout_lines[1], 'version': item.stdout_lines[0]}] }}"
+      loop: "{{ operator_pkg_info.results }}"
+      register: pkg_info_facts
+
 ################## Deploy Operator Subscription #####################
     - name: '{{ ansible_name_module }} | template | Copy Operator Subscripion to staging location'
       template: 
@@ -179,6 +197,8 @@
         force: yes
       with_dict:
         - "{{ operators_to_deploy }}"
+      loop_control:
+        index_var: key_cnt
       when:
         - item.key is defined and item.key != ""
         - item.value.catalog_name is defined and item.value.catalog_name != ""
@@ -190,8 +210,8 @@
         operator_catalog_name: "{{ item.value.catalog_name }}"
         operator_target_namespace: "{{ item.value.target_namespace }}"
         operator_deploy_namespace: "{{ item.value.deploy_namespace }}"
-        operator_name: "{{ item.key }}"
-        operator_sub_channel: "{{ item.value.sub_channel }}"
+        operator_sub_channel: "{{ pkg_infovalues[key_cnt].channel }}"
+        operator_csv_version: "{{ pkg_infovalues[key_cnt].version }}"
       register: op_sub_copied
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator subscription'
