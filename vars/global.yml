@@ -394,6 +394,7 @@ oauthclients_to_update:
     update: false
     name: 'cluster'
     timeout: '15m'
+     maxage: '1800'
   console-client:
     update: true
     name: 'console'
