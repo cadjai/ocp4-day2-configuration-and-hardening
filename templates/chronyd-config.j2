@@ -1,0 +1,13 @@
+#  Time Sync Service
+{% if ntp_servers | d([]) | length > 0 %}
+{% for tserv in ntp_servers %}
+{% if tserv is defined and tserv != '' %} 
+server {{ tserv }} iburst minpoll 4 maxpoll {{ ntp_maxpoll | d('0') }}
+{% endif %}
+{% endfor %}
+driftfile /var/lib/chrony/drift
+makestep 1.0 3
+rtcsync
+logdir /var/log/chrony
+{% endif %}
+

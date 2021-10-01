@@ -1,0 +1,64 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-apply-chronyd-config.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Apply Chronyd config"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Apply chronyd Configuration'
+      block:
+        - name: '{{ ansible_name_module }} | get node roles'
+          shell: >
+            {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
+          register: node_roles
+
+        - name: '{{ ansible_name_module }} | template | Copy chronyd config to staging location'
+          template: 
+            src: "templates/chronyd-config.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/chronyd-config"
+            force: yes
+          register: chronyd_conf_copied
+
+        - name: '{{ ansible_name_module }} | command:cat | Load chronyd_conf'
+          shell: cat {{ staging_dir | d('/tmp', true) }}/chronyd-config 
+          when:
+            - chronyd_conf_copied is defined
+          register: chronyd_conf_loaded
+
+        - name: '{{ ansible_name_module }} | template | Copy chronyd config to staging location'
+          vars:
+            chronyd_conf_data: "{{ chronyd_conf_loaded.stdout }}"
+            chronyd_path: "/etc/chrony.conf"
+            node_role: "{{ item }}"
+          template: 
+            src: "templates/chronyd-mc.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/chronyd-mc-{{ item }}.yml"
+            force: yes
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - chronyd_conf_loaded is defined
+            - chronyd_conf_loaded.rc is defined and chronyd_conf_loaded.rc == 0
+            - chronyd_conf_loaded.stdout is defined and chronyd_conf_loaded.stdout != ""
+          register: chronyd_mc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy chronyd config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/chronyd-mc-{{ item }}.yml 
+          loop: "{{ node_roles.stdout_lines }}"
+          when:
+            - node_roles is defined
+            - node_roles.stdout_lines is defined
+            - node_roles.stdout_lines | length > 0
+            - chronyd_mc_copied is defined
+          register: chronyd_mc_deployed

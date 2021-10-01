@@ -354,6 +354,9 @@ auditd_conf_path: '/etc/audit/auditd.conf'
 auditd_rule_conf_path: '/etc/audit/rules.d/audit.rules'
 fips_enabled: 'true'
 
+ntp_servers:
+- pool.ntp.org
+ntp_maxpoll: 4
 
 #####################################################################################################
 # End of hardening auditd variables
