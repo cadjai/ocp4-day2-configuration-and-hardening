@@ -439,7 +439,6 @@ ingress_cert_key_file: ''
 ##################################
 cluster_api_fqdn: ''
 add_custom_cert_api: 'false'
-ingress_ca_cm_name: ''
 api_cert_file: ''
 api_cert_key_file: ''
 

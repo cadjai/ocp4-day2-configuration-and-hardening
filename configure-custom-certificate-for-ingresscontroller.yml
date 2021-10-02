@@ -80,10 +80,10 @@
         - ingress_cert_file_exist.stat is defined
         - ingress_cert_file_exist.isreg is defined
         - ingress_cert_file_exist.isreg | bool
-        - ingress_cert_key_file is defined
-        - ingress_cert_key_file.stat is defined
-        - ingress_cert_key_file.isreg is defined
-        - ingress_cert_key_file.isreg | bool
+        - ingress_cert_key_file_exist is defined
+        - ingress_cert_key_file_exist.stat is defined
+        - ingress_cert_key_file_exist.stat.isreg is defined
+        - ingress_cert_key_file_exist.stat.isreg | bool
         - ingress_ca_cm_exist is defined
         - ingress_ca_cm_exist.rc is defined
         - ingress_ca_cm_exist.rc == 0

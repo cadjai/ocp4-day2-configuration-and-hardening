@@ -7,8 +7,8 @@
     - 'vars/vault.yml'
     - 'vars/global.yml'
   vars:
-    module: "Config Banner"
-    ansible_name_module: "Configure Banner | {{ module }}"
+    module: "Config API Certificate"
+    ansible_name_module: "Configure Custom Certificate | {{ module }}"
   pre_tasks:
     - name: '{{ ansible_name_module }} | Ensure required variables are set'
       block:
@@ -71,16 +71,16 @@
           register: api_cert_key_file_exist
 
   tasks:
-    - name: Configure ingresscontroller to use custom certificate
+    - name: Configure API server to use custom certificate
       when:
         - api_cert_file_exist is defined
         - api_cert_file_exist.stat is defined
         - api_cert_file_exist.isreg is defined
         - api_cert_file_exist.isreg | bool
-        - api_cert_key_file is defined
-        - api_cert_key_file.stat is defined
-        - api_cert_key_file.isreg is defined
-        - api_cert_key_file.isreg | bool
+        - api_cert_key_file_exist is defined
+        - api_cert_key_file_exist.stat is defined
+        - api_cert_key_file_exist.stat.isreg is defined
+        - api_cert_key_file_exist.stat.isreg | bool
       block:
         - name: create API custom cert secret
           command: >
