@@ -1,0 +1,102 @@
+- name: ' Configure Keycloak Provider | configure-custom-certificate-for-ingresscontroller.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Config Custom Certificate for Ingress Controller"
+    ansible_name_module: "Configure Custom certificate | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - add_custom_ca_ingess is defined and add_custom_ca_ingess | bool
+            msg: " the add_custom_ca_ingess must be set to true "
+        - assert:
+            that:
+              - ingress_cert_file is defined and ingress_cert_file != ""
+            msg: " the ingress_cert_file must be set and valid "
+        - assert:
+            that:
+              - ingress_cert_key_file is defined and ingress_cert_key_file != ""
+            msg: " the ingress_cert_key_file must be set and valid "
+             
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} Check Custom Ingress controller Certificate files'
+      block:
+        - name: '{{ ansible_name_module }} | config custom CA ingress | check custom cert file'
+          stat:
+            path: "{{ ingress_cert_file }}"
+          register: ingress_cert_file_exist
+
+        - name: '{{ ansible_name_module }} | config custom CA ingress | check custom cert key file'
+          stat:
+            path: "{{ ingress_cert_key_file }}"
+          register: ingress_cert_key_file_exist
+
+        - name: '{{ ansible_name_module }} | config custom CA ingress | check user ca'
+          shell: >
+            {{ openshift_cli }} get cm {{ ingress_ca_cm_name | default('user-ca-bundle') }} -n openshift-config -o yaml
+          ignore_errors: true
+          register: ingress_ca_cm_exist
+
+  tasks:
+    - name: Configure ingresscontroller to use custom certificate
+      when:
+        - ingress_cert_file_exist is defined
+        - ingress_cert_file_exist.stat is defined
+        - ingress_cert_file_exist.isreg is defined
+        - ingress_cert_file_exist.isreg | bool
+        - ingress_cert_key_file is defined
+        - ingress_cert_key_file.stat is defined
+        - ingress_cert_key_file.isreg is defined
+        - ingress_cert_key_file.isreg | bool
+        - ingress_ca_cm_exist is defined
+        - ingress_ca_cm_exist.rc is defined
+        - ingress_ca_cm_exist.rc == 0
+      block:
+        - name: create ingress custom cert secret
+          command: >
+            {{ openshift_cli }} create secret tls ingress-secret --cert={{ ingress_cert_file }} --key={{ ingress_cert_key_file }} -n openshift-ingress
+
+        - name: Patch Ingress Controller
+          command: >
+            {{ openshift_cli }} patch ingresscontroller.operator default --type=merge -p  '{"spec":{"defaultCertificate": {"name": "ingress-secret"}}}' -n openshift-ingress-operator
+
+        - name: Patch Proxy Config
+          command: >
+            {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name | default('user-ca-bundle') }}"}}}'
+

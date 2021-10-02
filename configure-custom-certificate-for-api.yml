@@ -1,0 +1,99 @@
+- name: ' Configure Keycloak Provider | configure-custom-certificate-for-api.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Config Banner"
+    ansible_name_module: "Configure Banner | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - add_custom_cert_api is defined and add_custom_cert_api | bool
+            msg: " the add_custom_cert_api must be set to true "
+        - assert:
+            that:
+              - cluster_api_fqdn is defined and cluster_api_fqdn != ''
+            msg: " the cluster_api_fqdn must be set to true "
+        - assert:
+            that:
+              - api_cert_file is defined and api_cert_file != ""
+            msg: " the api_cert_file must be set and valid "
+        - assert:
+            that:
+              - api_cert_key_file is defined and api_cert_key_file != ""
+            msg: " the api_cert_key_file must be set and valid "
+             
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} Check Custom API Server Certificate files'
+      block:
+        - name: '{{ ansible_name_module }} | config custom Cert API | check custom cert file'
+          stat:
+            path: "{{ api_cert_file }}"
+          register: api_cert_file_exist
+
+        - name: '{{ ansible_name_module }} | config custom Cert API | check custom cert key file'
+          stat:
+            path: "{{ api_cert_key_file }}"
+          register: api_cert_key_file_exist
+
+  tasks:
+    - name: Configure ingresscontroller to use custom certificate
+      when:
+        - api_cert_file_exist is defined
+        - api_cert_file_exist.stat is defined
+        - api_cert_file_exist.isreg is defined
+        - api_cert_file_exist.isreg | bool
+        - api_cert_key_file is defined
+        - api_cert_key_file.stat is defined
+        - api_cert_key_file.isreg is defined
+        - api_cert_key_file.isreg | bool
+      block:
+        - name: create API custom cert secret
+          command: >
+            {{ openshift_cli }} create secret tls api-secret --cert={{ api_cert_file }} --key={{ api_cert_key_file }} -n openshift-config
+
+        - name: Patch API Server
+          command: >
+                  {{ openshift_cli }} patch apiserver cluster --type=merge -p  '{"spec": {"servingCerts": {"namedCertificates": [{"names": ["{{ cluster_api_fqdn }}"], "servingCertificate": {"name": "api-secret"}}]}}}' -n openshift-ingress-operator
+          register: apiserver_patched
+
+        - name: Verify API Server Cert Config
+          shell: >
+            {{ openshift_cli }} get apiserver cluster -o yaml | grep -i '{{ cluster_api_fqdn }}'
+          register: apiserver_patch_check
+
+

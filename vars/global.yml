@@ -421,6 +421,32 @@ oauthclients_to_update:
 # End of Oauth Timeout Config variables
 #####################################################################################################
 
+
+#################################
+# Ingress Controller Custom Certificate Variables
+##################################
+add_custom_ca_ingess: 'false'
+ingress_ca_cm_name: ''
+ingress_cert_file: ''
+ingress_cert_key_file: ''
+
+#################################
+# End Ingress Controller Custom Certificate Variables
+##################################
+
+#################################
+#  API Server Custom Certificate Variables
+##################################
+cluster_api_fqdn: ''
+add_custom_cert_api: 'false'
+ingress_ca_cm_name: ''
+api_cert_file: ''
+api_cert_key_file: ''
+
+#################################
+# End API Server Custom Certificate Variables
+##################################
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
