@@ -96,4 +96,51 @@
             {{ openshift_cli }} get apiserver cluster -o yaml | grep -i '{{ cluster_api_fqdn }}'
           register: apiserver_patch_check
 
+        - name: Update kubeconfig with custom CA if appropriate
+          when:
+            - update_kubeconfig is defined
+            - update_kubeconfig | bool
+            - kubeconfig_file is defined
+            - kubeconfig_file != ''
+          block:
+            - name: '{{ ansible_name_module }} | config custom Cert API | check kubeconfig file'
+              become: yes
+              stat:
+                path: "{{ kubeconfig_file }}"
+              register: kubeconfig_file_exist
+
+            - name: '{{ ansible_name_module }} | config custom Cert API | Retrieve encoded CA data from kubeconfig file'
+              become: yes
+              shell: >
+                cat {{ kubeconfig_file }} | grep certificate-authority-data | awk '{print $2}' 
+              register: kubeconfig_ca_data
+
+            - name: '{{ ansible_name_module }} | config custom Cert API | Save decoded CA data from kubeconfig file to file'
+              become: yes
+              shell: >
+                cat {{ kubeconfig_file }} | grep certificate-authority-data | awk '{print $2}' | base64 -d > {{ original_ca_file | default('/tmp/ca-bundle-orig.crt') }}
+              register: kubeconfig_ca_data_file
+
+            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | get custom ca data from cm'
+              shell: >
+                {{ openshift_cli }} extract cm/user-ca-bundle -n openshift-config --to={{ extracted_custom_ca_file | default('/tmp') | dirname }} --confirm=true
+              ignore_errors: true
+              register: custom_ca_data_file
+
+            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Create updated ca-bundle file'
+              shell: >
+                cat {{ original_ca_file | default('/tmp/ca-bundle-orig.crt') }} {{ extracted_custom_ca_file | default('/tmp/ca-bundle.crt') }} > {{ merged_ca_file | default('/tmp/updated-ca-bundle.crt') }}
+
+            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Encode Updated CA Cert'
+              shell: >
+                cat {{ merged_ca_file | default('/tmp/updated-ca-bundle.crt') }} | base64 -w0; echo
+              register: updated_ca_bundle_crt
+
+            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Update CA Cert in kubeconfig'
+              replace:
+                path: "{{ kubeconfig_file }}"
+                regexp: "certificate-authority-data: {{ kubeconfig_ca_data.stdout }}"
+                replace: "certificate-authority-data: {{ updated_ca_bundle_crt.stdout }}"
+                backup: yes
+              register: updated_kubeconfig 
 

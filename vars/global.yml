@@ -441,6 +441,11 @@ cluster_api_fqdn: ''
 add_custom_cert_api: 'false'
 api_cert_file: ''
 api_cert_key_file: ''
+update_kubeconfig: 'false'
+kubeconfig_file: ''
+original_ca_file: ''
+merged_ca_file: ''
+extracted_custom_ca_file: ''
 
 #################################
 # End API Server Custom Certificate Variables
