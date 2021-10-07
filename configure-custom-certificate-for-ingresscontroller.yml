@@ -100,3 +100,11 @@
           command: >
             {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name | default('user-ca-bundle') }}"}}}'
 
+        - name: Add empty ConfigMap to use as CA injection CM
+          command: >
+            {{ openshift_cli }} create configmap custom-ca-bundle -n openshift-config
+
+        - name: Add label to empty ConfigMap created above to use as CA injection CM
+          command: >
+            {{ openshift_cli }} label configmap custom-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config
+
