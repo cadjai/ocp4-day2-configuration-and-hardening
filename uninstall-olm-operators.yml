@@ -10,19 +10,10 @@
     - 'vars/global.yml'
 
   pre_tasks:
-    - name: '{{ ansible_name_module }} | {{ openshift_cli }} whoami | check if there is vali
-d session'
-      command: >
-        {{ openshift_cli }} whoami
-      ignore_errors: yes
-      register: existing_session
-
     - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
       import_role:
         name: ocp-cluster-login
-      when:
-        - existing_session.rc > 0
-          
+
   tasks:
     - name: '{{ ansible_name_module }} | get all OperatorGroup'
       shell: >
