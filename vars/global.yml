@@ -99,23 +99,6 @@ operators_to_deploy:
     index_image: 'community-operator-index'
     index_image_tag: 'latest'
 
-  prometheus-operator:
-    group_name: 'prometheus-operator-group'
-    catalog_name: 'custom-redhat-operator-catalog'
-    sub_channel: '4.7'
-    target_namespace: 'openshift-monitoring' ### values are all, empty or list of ns names
-    deploy_namespace: 'openshift-monitoring'
-    deploy_namespace_description: 'openshift-monitoring'
-    deploy: 'true'
-    create_namespace: 'true'
-    create_catalog: 'false'
-    create_catalog_group: 'true'
-    index_image: 'redhat-operator-index'
-    index_image_tag: 'v4.7'
-    create_configmap: 'true'
-    configmap_template: 'templates/cluster-monitoring-config.yml.j2'
-    retention: '24h'
-
   namespace-configuration-operator:
     group_name: 'namespace-configuration-operator-group'
     catalog_name: 'community-redhat-operator-catalog'
@@ -231,6 +214,34 @@ operators_to_deploy:
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
     index_image_tag: 'v4.7'
+
+  rhacs-operator:
+    group_name: 'rhacs-operator-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: 'latest'
+    deploy_namespace: 'openshift-operators-redhat'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-operators-redhat'
+    deploy: 'true'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+    index_image_tag: 'v4.7'
+
+  advanced-cluster-management:
+    group_name: 'advanced-cluster-management-group'
+    catalog_name: 'custom-redhat-operator-catalog'
+    sub_channel: 'release-2.3'
+    deploy_namespace: 'open-cluster-management'
+    target_namespace: 'open-cluster-management' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'open-cluster-management'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-operator-index'
+
 
 ################## Infra nodes configuration #################################
 infranodes:
