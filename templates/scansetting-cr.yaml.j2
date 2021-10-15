@@ -13,10 +13,10 @@ rawResultStorage:
   size: {{ scan_pvc_size | default('1Gi') }}
 schedule: {{ compliance_scan_schedule | default('0 1 * * *') }}
 roles:
-  - worker
-  - master
+- worker
+- master
 scanTolerations:
-  - effect: NoSchedule
-    key: node-role.kubernetes.io/master
-    operator: Exists
+- effect: NoSchedule
+  key: node-role.kubernetes.io/master
+  operator: Exists
 
