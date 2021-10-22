@@ -1,0 +1,174 @@
+- name: ' Configure Keycloak Provider | configure-console-login-hide-kubeadmin.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Configure Console Login"
+    ansible_name_module: "Configure Console | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | check IDP'
+      command: >
+        {{ openshift_cli }} get oauth cluster -o jsonpath='{.spec.identityProviders[-1]}{"\n"}'
+      ignore_errors: yes
+      register: idp_config_check
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Get console URL'
+      command: >
+        {{ openshift_cli }} whoami --show-console
+      ignore_errors: yes
+      register: console_url
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Ensure an IDP is configured'
+      assert:
+        that:
+          - idp_config_check is defined
+          - idp_config_check.rc is defined
+          - idp_config_check.rc == 0
+          - idp_config_check.stdout is defined
+          - idp_config_check.stdout != ''
+          - "'claim' in idp_config_check.stdout"
+        msg: " There need to be at least one Identity Provider Configured."
+
+    - name: '{{ ansible_name_module }} | Configure Login Page to exclude kubeadmin'
+      block:
+        - name: '{{ ansible_name_module }} | command:set_fact | Set template URL'
+          set_fact:
+            console_login_template_url: "{{ console_url.stdout }}/auth/login"
+
+        - name: '{{ ansible_name_module }} | command:set_fact | Set provider secret name'
+          set_fact:
+            providers_secret: "providers-template-secret"
+          when:
+            - not providers_secret is defined or providers_secret == ''
+
+        - name: '{{ ansible_name_module }} | shell:curl | Get Login providers templates'
+          shell: >
+            curl -sLk {{ console_login_template_url }} > {{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}
+          register: providers_template_exported
+
+        - name: '{{ ansible_name_module }} | config keycloak CA | check custom ca cm'
+          stat:
+            path: "{{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}"
+          when:
+            - providers_template_exported is defined
+            - providers_template_exported.rc == 0
+          register: providers_template_exist
+
+        - name: '{{ ansible_name_module }} | Update exported providers template'
+          when:
+            - providers_template_exist is defined
+            - providers_template_exist.stat is defined
+            - providers_template_exist.stat.isreg is defined
+            - providers_template_exist.stat.isreg | bool
+          block:
+            - name: '{{ ansible_name_module }} | Add Markers to mark Providers Check block in CM 1 of 2'
+              lineinfile:
+                path: "{{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}"
+                insertafter: '<main class="pf-c-login__main">'
+                line: "# BEGIN ANSIBLE MANAGED BLOCK Removing Providers Check Block"
+                backup: "true"
+
+            - name: '{{ ansible_name_module }} | Add Markers to mark Providers Check in CM 2 of 2'
+              lineinfile:
+                path: "{{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}"
+                insertbefore: '<footer class="pf-c-login__footer">'
+                line: "# END ANSIBLE MANAGED BLOCK Removing Providers Check Block"
+                backup: "true"
+
+            - name: '{{ ansible_name_module }} | Replace Providers block'
+              blockinfile:
+                marker: "# {mark} ANSIBLE MANAGED BLOCK Removing Providers Check Block"
+                path: "{{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}"
+                backup: "true"
+                block: |2
+                          {% raw %}
+                             <div class="pf-c-login__main-body">
+                                 <h1 class="pf-c-title pf-m-3xl">Log in with&hellip;</h1>
+                                 <ul>
+                                 {{ range $provider := .Providers }}
+                                      {{ if ne $provider.Name "kube:admin" }}
+                                           <li class="idp">
+                                           <a href="{{$provider.URL}}" class="pf-c-button pf-m-secondary pf-m-block" title="Log in with {{$provider.Name}}">{{$provider.Name}}</a>
+                                           </li>
+                                      {{ end }}
+                                 {{ end }}
+                                 </ul>
+                              </div>
+                           </main>
+                          {% endraw %}
+
+            - name: '{{ ansible_name_module }} | Remove Begin Marker'
+              lineinfile:
+                path: "{{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}"
+                line: "# BEGIN ANSIBLE MANAGED BLOCK Removing Providers Check Block"
+                backup: "true"
+                state: absent
+
+            - name: '{{ ansible_name_module }} | Remove End Marker'
+              lineinfile:
+                path: "{{ extracted_providers_file_path | default('/tmp', true) }}/{{ extracted_providers_file | default('current-providers-template.html', true) }}"
+                line: "# END ANSIBLE MANAGED BLOCK Removing Providers Check Block"
+                backup: "true"
+                state: absent
+
+            - name: '{{ ansible_name_module }} | Ensure the secret does not already exist'
+              command: >
+                {{ openshift_cli }} get secret {{ providers_secret }} -n openshift-config
+              failed_when:
+                - "not 'not found' in existing_secret.stderr"
+              ignore_errors: yes
+              register: existing_secret
+
+            - name: '{{ ansible_name_module }} | Delete existing secret'
+              command: >
+                {{ openshift_cli }} delete secret {{ providers_secret }} -n openshift-config
+              when:
+                - existing_secret is defined
+                - existing_secret.rc is defined
+                - existing_secret.rc == 0
+              register: existing_secret_deleted
+
+            - name: '{{ ansible_name_module }} | create secret'
+              command: >
+                {{ openshift_cli }} create secret generic {{ providers_secret }} -n openshift-config
+              register: secret_created
+
+            - name: '{{ ansible_name_module }} | Patch Oauth to use the update providers template'
+              command: >
+                {{ openshift_cli }} patch oauth.config.openshift.io cluster --type=merge -p  '{"spec": {"templates": {"providerSelection": {"name": "{{ providers_secret }}"}}}}'
+              register: oauth_patched
+
