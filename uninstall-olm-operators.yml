@@ -45,7 +45,7 @@
 
     - name: '{{ ansible_name_module }} | get all job in the openshift-marketplace'
       shell: >
-        {{ openshift_cli }} get job.batch -n openshift-marketplace --no-headers | awk '{print $1}' 
+        {{ openshift_cli }} get job.batch -n openshift-marketplace --no-headers | awk '{print $1 " -n openshift-marketplace "}' 
       register: all_opjobs
 
     - name: '{{ ansible_name_module }} | delete all job objects from openshift-marketplace'
