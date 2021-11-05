@@ -39,6 +39,177 @@
         - not ocp_cluster_token is defined or ocp_cluster_token == ""
       register: login_out
   tasks:
+    - name: '{{ ansible_name_module }} Config keycloak CA'
+      when:
+        - use_keycloak_ca is defined
+        - use_keycloak_ca | bool
+        - keycloak_ca_cm_name is defined
+        - keycloak_ca_cm_name != ""
+      block:
+        - name: '{{ ansible_name_module }} | config keycloak CA | check custom ca cm'
+          stat: 
+            path: "{{ custom_ca_cm_file }}"
+          register: custom_ca_cm_exist
+
+        - name: '{{ ansible_name_module }} | config keycloak CA | check user ca'
+          shell: >
+            {{ openshift_cli }} get cm user-ca-bundle -n openshift-config -o yaml > "{{ custom_ca_cm_file }}"
+          ignore_errors: true
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+          register: user_ca_bundle_exist
+
+        - name: '{{ ansible_name_module }} | config keycloak CA | check custom ca cm'
+          stat: 
+            path: "{{ custom_ca_cm_file }}"
+          when:
+            - user_ca_bundle_exist is defined
+            - user_ca_bundle_exist.rc is defined
+            - user_ca_bundle_exist.rc == 0 
+          register: custom_ca_cm_exist
+
+        - name: Remove unecessary metadata from exported file 1 of 7
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "creationTimestamp:"
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: Remove unecessary metadata from exported file 2 of 7
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "selfLink:"
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+        
+        - name: Remove unecessary metadata from exported file 3 of 7
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "uid: "
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+        
+        - name: Remove unecessary metadata from exported file 4 of 7
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "resourceVersion: "
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+        
+        - name: Remove unecessary metadata from exported file 5 of 7
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "openshift.io/generated-by: "
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: Add Markers to mark Managed Field block in CM 1 of 2 
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            insertbefore: "  managedFields:"
+            line: "# BEGIN ANSIBLE MANAGED BLOCK Removing Managed Fields Block" 
+            backup: "true"
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: Add Markers to mark Managed Field block in CM 2 of 2 
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            insertafter: "  operation: Update"
+            line: "# END ANSIBLE MANAGED BLOCK Removing Managed Fields Block" 
+            backup: "true"
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: Remove unecessary metadata from exported file 6 of 7
+          blockinfile:
+            marker: "# {mark} ANSIBLE MANAGED BLOCK Removing Managed Fields Block"
+            path: "{{ custom_ca_cm_file }}"
+            backup: "true"
+            block: | 
+              managedFields:
+              - apiVersion: v1
+                fieldsType: FieldsV1
+                fieldsV1:
+                  f:data:
+                    .: {}
+                    f:ca-bundle.crt: {}
+                manager: cluster-bootstrap
+                operation: Update
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: Remove unecessary metadata from exported file 7 of 7
+          lineinfile:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "   time:"
+            state: absent
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+        
+        - name: Update CA CM name in exported file 1 of 2
+          replace:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "user-ca-bundle"
+            replace: "{{ keycloak_ca_cm_name | default('user-custom-ca') }}"
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: Update CA CM name in exported file 2 of 2
+          replace:
+            path: "{{ custom_ca_cm_file }}"
+            regexp: "ca-bundle.crt"
+            replace: "ca.crt"
+          when:
+            - custom_ca_cm_exist is defined
+            - custom_ca_cm_exist.stat is defined
+            - custom_ca_cm_exist.stat.isreg is defined
+            - custom_ca_cm_exist.stat.isreg | bool
+
+        - name: '{{ ansible_name_module }} | config keycloak CA | create user custom CA CM'
+          command: >
+            {{ openshift_cli }} apply -f "{{ custom_ca_cm_file }}"
+          register: keycloak_custom_ca_created
+
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | create secret'
       command: >
         {{ openshift_cli }} create secret generic {{ keycloak_secret_name }} --from-literal=clientSecret={{ keycloak_secret }} -n openshift-config"

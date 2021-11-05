@@ -12,4 +12,7 @@ roles:
   - src: https://github.com/cadjai/configure-oauthclient-inactivity-timeout-on-ocp4.git 
     scm: git
     name: config-inactivity-timeout-on-ocp4 
+  - src: https://github.com/cadjai/copy-user-ca-bundle-cm-into-new-ca-bundle.git 
+    scm: git
+    name: copy-user-ca-bundle-cm-into-new-ca-bundle 
 
