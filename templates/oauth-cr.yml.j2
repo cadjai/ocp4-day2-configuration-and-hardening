@@ -17,6 +17,10 @@ spec:
         clientID: "{{ client_ID }}"
         clientSecret:
           name: "{{ keycloak_secret_name }}"
+{% if use_keycloak_ca is defined and use_keycloak_ca | bool %}
+        ca:
+          name: "{{ keycloaak_ca_cm_name }}"
+{% endif %}
         extraScopes: []
         issuer: "{{ issuer_url }}"
       type: OpenID
