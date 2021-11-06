@@ -471,6 +471,20 @@ use_console_logout: true
 # end Cluster logout config variables
 ###################################
 
+###################################
+#  Export Scan Results config variables
+###################################
+
+scan_results_export_image: 'registry.redhat.io/compliance/oc-compliance-rhel8'
+scan_results_binary_dir: '/usr/local/bin'
+scan_results_binary_path: '{{ scan_results_binary_dir }}/oc-compliance'
+dir_scan_result_export: '/tmp/scan-results'
+scan_settingbindings_name: 'nist-moderate'
+
+###################################
+# end Export Scan Results config variables
+###################################
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
