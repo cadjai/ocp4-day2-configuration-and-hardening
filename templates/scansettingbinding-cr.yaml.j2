@@ -3,6 +3,13 @@ kind: ScanSettingBinding
 metadata:
   name: "{{ compliance_name | default('cis-compliance') }}"
 profiles:
+{% if profiles is defined and profiles | length > 0 %}
+{% for profile in profiles %}
+  - name: "{{ profile }}"
+    kind: Profile
+    apiGroup: compliance.openshift.io/v1alpha1
+{% endfor %}
+{% else %}
   - name: "{{ platform_node_profile_name | default('ocp4-cis-node') }}"
     kind: Profile
     apiGroup: compliance.openshift.io/v1alpha1
@@ -13,3 +20,4 @@ settingsRef:
   name: "{{ compliance_name | default('cis-compliance') }}-auto-apply"
   kind: ScanSetting
   apiGroup: compliance.openshift.io/v1alpha1
+{% endif %}
