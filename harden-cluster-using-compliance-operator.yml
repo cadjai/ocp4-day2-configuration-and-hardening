@@ -57,15 +57,17 @@
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render default ScanSettingBinding CR'
           vars:
-            profiles: "{{ default_profiles.stdout_lines }}"
+            profile: "{{ item }}"
           template:
             src: "templates/scansettingbinding-cr.yaml.j2"
-            dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr.yaml"
+            dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ item }}.yaml"
             force: yes
+          loop: "{{ default_profiles.stdout_lines }}"
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
           command: >
-            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr.yaml -n openshift-compliance
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ item }}.yaml -n openshift-compliance
+          loop: "{{ default_profiles.stdout_lines }}"
           register: scansetting_applied
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get automatable findings results'
