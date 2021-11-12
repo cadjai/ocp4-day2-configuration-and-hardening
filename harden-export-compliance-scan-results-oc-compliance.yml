@@ -14,7 +14,7 @@
         name: ocp-cluster-login
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | get scansettingbindings'
       shell: >
-        {{ openshift_cli }} get scansettingbindings {{ scan_settingbindings_name | default('nist-moderate', false) }} --no-headers -n openshift-compliance | awk '{print $1}'
+        {{ openshift_cli }} get scansettingbinding.compliance.openshift.io --no-headers -n openshift-compliance | awk '{print $1}'
       ignore_errors: yes
       register: scansettingbinding_exist
 
@@ -24,8 +24,8 @@
           - scansettingbinding_exist is defined
           - scansettingbinding_exist.rc is defined
           - scansettingbinding_exist.rc == 0 
-          - scansettingbinding_exist.stdout is defined
-          - scansettingbinding_exist.stdout != '' 
+          - scansettingbinding_exist.stdout_lines is defined
+          - scansettingbinding_exist.stdout_lines | length > 0 
         msg: "A scansettingbindings is required to run scan and export results. Please configure one"
 
   tasks:
@@ -79,9 +79,10 @@
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | create export pods'
       shell: >
         {{ scan_results_binary_path }} fetch-raw scansettingbindings \
-          {{ scan_settingbindings_name | default('nist-moderate', false) }} \
+          {{ item }} \
             -o  {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }} \
              -n openshift-compliance
+      loop: "{{ scansettingbinding_exist.stdout_lines }}"
       register: raw_scan_results_exported
 
     - name: '{{ ansible_name_module }} | unpack the bzip file if applicable '

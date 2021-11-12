@@ -480,6 +480,7 @@ scan_results_binary_dir: '/usr/local/bin'
 scan_results_binary_path: '{{ scan_results_binary_dir }}/oc-compliance'
 dir_scan_result_export: '/tmp/scan-results'
 scan_settingbindings_name: 'nist-moderate'
+unpack_scan_arf: true
 
 ###################################
 # end Export Scan Results config variables
