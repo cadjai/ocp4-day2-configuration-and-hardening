@@ -18,7 +18,7 @@
       ignore_errors: yes
       register: scansettingbinding_exist
 
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | get scansettingbindings'
+    - name: '{{ ansible_name_module }} | assert | ensure there are scansettingbindings'
       assert:
         that:
           - scansettingbinding_exist is defined
