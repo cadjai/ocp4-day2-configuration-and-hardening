@@ -55,6 +55,8 @@
   tasks:
     - name: '{{ ansible_name_module }} | Configure OpenID logout '
       when:
+        - openid_console_logout_uri is defined
+        - openid_console_logout_uri != ''
         - openid_issuer is defined
         - openid_issuer.rc is defined
         - openid_issuer.rc == 0 
@@ -64,12 +66,9 @@
       block:
         - name: '{{ ansible_name_module }} | command:set_fact | Set logout URL'
           #openid_logout_url: "{{ openid_issuer.stdout }}/protocol/openid-connect/logout?redirect_uri={{ openid_issuer.stdout | urlencode }}"
+          #openid_logout_url: "{{ openid_issuer.stdout }}/protocol/openid-connect/logout?redirect_uri={{ (openid_issuer.stdout + '/.well-known/openid-configuration') | urlencode }}"
           set_fact:
-            openid_logout_url: "{{ openid_issuer.stdout }}/protocol/openid-connect/logout?redirect_uri={{ (openid_issuer.stdout + '/.well-known/openid-configuration') | urlencode }}"
-
-        - name: Print logout URL
-          debug:
-            var: openid_logout_url
+            openid_logout_url: "{{ console_url.stdout }}{{ openid_console_logout_uri }}"
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Patch Console config'
           command: >
@@ -93,10 +92,6 @@
         - name: '{{ ansible_name_module }} | command:set_fact | Set logout URL'
           set_fact:
             console_logout_url: "{{ console_url.stdout }}?GLO=true"
-
-        - name: Print logout URL
-          debug:
-            var: console_logout_url 
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Patch Console config'
           command: >

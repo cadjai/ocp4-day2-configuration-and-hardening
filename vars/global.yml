@@ -466,6 +466,10 @@ extracted_custom_ca_file: ''
 #  Cluster logout config variables
 ###################################
 use_console_logout: true
+### The following is the uri for the logout uri as defined in the openid connect . 
+#For example when defining client in keycloak the logout uri could be configure to be /console/logout
+# That is then appended to the base uri to get the logout path for that client.
+openid_console_logout_uri: ''   
 
 ###################################
 # end Cluster logout config variables
