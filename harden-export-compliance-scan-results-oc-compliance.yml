@@ -90,8 +90,8 @@
         - unpack_scan_arf is defined
         - unpack_scan_arf | bool
         - raw_scan_results_exported is defined
-        - raw_scan_results_exported.rc is defined
-        - raw_scan_results_exported.rc == 0
+        - raw_scan_results_exported.results is defined
+        - raw_scan_results_exported.results | length > 0
       block:
         - name: '{{ ansible_name_module }} | command:which | check if bzip2 is installed '
           command: which bzcat
@@ -148,7 +148,7 @@
         warn: false
       when:
         - raw_scan_results_exported is defined
-        - raw_scan_results_exported.rc is defined
-        - raw_scan_results_exported.rc == 0
+        - raw_scan_results_exported.results is defined
+        - raw_scan_results_exported.results | length > 0
       register: scan_results_files_archived
 
