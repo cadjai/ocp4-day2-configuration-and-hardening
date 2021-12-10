@@ -88,23 +88,38 @@
         - ingress_ca_cm_exist.rc is defined
         - ingress_ca_cm_exist.rc == 0
       block:
-        - name: create ingress custom cert secret
+        - name: '{{ ansible_name_module }} | Get Existing ingress custom cert secret'
+          command: >
+            {{ openshift_cli }} get secret ingress-secret -n openshift-ingress
+          ignore_errors: yes
+          register: ingress_secret_exist
+
+        - name: '{{ ansible_name_module }} | Delete Existing ingress custom cert secret'
+          command: >
+            {{ openshift_cli }} delete secret ingress-secret -n openshift-ingress
+          ignore_errors: yes
+          when:
+            - ingress_secret_exist.rc is defined
+            - ingress_secret_exist.rc == 0
+          register: ingress_secret_deleted
+
+        - name: '{{ ansible_name_module }} | create ingress custom cert secret'
           command: >
             {{ openshift_cli }} create secret tls ingress-secret --cert={{ ingress_cert_file }} --key={{ ingress_cert_key_file }} -n openshift-ingress
 
-        - name: Patch Ingress Controller
+        - name: '{{ ansible_name_module }} | Patch Ingress Controller'
           command: >
             {{ openshift_cli }} patch ingresscontroller.operator default --type=merge -p  '{"spec":{"defaultCertificate": {"name": "ingress-secret"}}}' -n openshift-ingress-operator
 
-        - name: Patch Proxy Config
+        - name: '{{ ansible_name_module }} | Patch Proxy Config'
           command: >
             {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name | default('user-ca-bundle') }}"}}}'
 
-        - name: Add empty ConfigMap to use as CA injection CM
+        - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
           command: >
             {{ openshift_cli }} create configmap custom-ca-bundle -n openshift-config
 
-        - name: Add label to empty ConfigMap created above to use as CA injection CM
+        - name: '{{ ansible_name_module }} | Add label to empty ConfigMap created above to use as CA injection CM'
           command: >
             {{ openshift_cli }} label configmap custom-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config
 

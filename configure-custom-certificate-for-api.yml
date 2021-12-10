@@ -71,7 +71,7 @@
           register: api_cert_key_file_exist
 
   tasks:
-    - name: Configure API server to use custom certificate
+    - name: '{{ ansible_name_module }} | Configure API server to use custom certificate'
       when:
         - api_cert_file_exist is defined
         - api_cert_file_exist.stat is defined
@@ -82,21 +82,36 @@
         - api_cert_key_file_exist.stat.isreg is defined
         - api_cert_key_file_exist.stat.isreg | bool
       block:
-        - name: create API custom cert secret
+        - name: '{{ ansible_name_module }} | Get Existing API custom cert secret'
+          command: >
+            {{ openshift_cli }} get secret api-secret -n openshift-config
+          ignore_errors: yes
+          register: api_secret_exist
+
+        - name: '{{ ansible_name_module }} | Delete Existing API custom cert secret'
+          command: >
+            {{ openshift_cli }} delete secret api-secret -n openshift-config
+          ignore_errors: yes
+          when:
+            - api_secret_exist.rc is defined
+            - api_secret_exist.rc == 0
+          register: api_secret_exist
+
+        - name: '{{ ansible_name_module }} | create API custom cert secret'
           command: >
             {{ openshift_cli }} create secret tls api-secret --cert={{ api_cert_file }} --key={{ api_cert_key_file }} -n openshift-config
 
-        - name: Patch API Server
+        - name: '{{ ansible_name_module }} | Patch API Server'
           command: >
                   {{ openshift_cli }} patch apiserver cluster --type=merge -p  '{"spec": {"servingCerts": {"namedCertificates": [{"names": ["{{ cluster_api_fqdn }}"], "servingCertificate": {"name": "api-secret"}}]}}}' -n openshift-ingress-operator
           register: apiserver_patched
 
-        - name: Verify API Server Cert Config
+        - name: '{{ ansible_name_module }} | Verify API Server Cert Config'
           shell: >
             {{ openshift_cli }} get apiserver cluster -o yaml | grep -i '{{ cluster_api_fqdn }}'
           register: apiserver_patch_check
 
-        - name: Update kubeconfig with custom CA if appropriate
+        - name: '{{ ansible_name_module }} | Update kubeconfig with custom CA if appropriate'
           when:
             - update_kubeconfig is defined
             - update_kubeconfig | bool
