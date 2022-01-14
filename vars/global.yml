@@ -242,6 +242,18 @@ operators_to_deploy:
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
 
+  cincinnati-operator:  ### name of the operator as it was used to mirror the operator
+    group_name: 'openshift-update-service-group'
+    catalog_name: 'custom-cincinnati-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-update-service'
+    target_namespace: 'openshift-update-service' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-update-service'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'cincinnati-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
 
 ################## Infra nodes configuration #################################
 infranodes:
