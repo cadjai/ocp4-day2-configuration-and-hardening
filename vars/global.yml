@@ -502,6 +502,19 @@ unpack_scan_arf: true
 # end Export Scan Results config variables
 ###################################
 
+###################################
+# OpenShift Update Service config variables
+###################################
+update_graphdata_application_name: 'update-service'
+update_service_namespace: 'openshift-update-service'
+graphdata_replicas: 1
+current_ocp_release_channel: 'stable-4.7'
+
+###################################
+# end OpenShift Update Service config variables
+###################################
+
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################

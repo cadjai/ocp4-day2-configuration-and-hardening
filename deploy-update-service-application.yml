@@ -1,0 +1,114 @@
+- name: ' Configure Cluster Update Service  | deploy-update-service-application.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Deploy Cluster Update Service Application"
+    ansible_name_module: "Configure Update Service in disconnected | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    #- name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries'
+    #  import_role:
+    #    name: copy-user-ca-bundle-cm-into-new-ca-bundle
+    #    tasks_from: create-additional-ca-cm-for-registries.yml
+    #  vars:
+    #    registries_trust_stores:
+    #      artifactory:
+    #        fqdn: '{{ registry_host_fqdn }}'
+    #        port: ''
+    #        ca_file_pem: './registry.crt'
+    #    registry_ca_bundle_cm_name: 'registry-config'
+
+    - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create update service CA'
+      import_role:
+        name: copy-user-ca-bundle-cm-into-new-ca-bundle
+        tasks_from: create-additional-ca-cm-for-registries.yml
+      vars:
+        registries_trust_stores:
+          artifactory:
+            fqdn: 'updateservice-registry'
+            port: ''
+            ca_file_pem: './registry.crt'
+        registry_ca_bundle_cm_name: 'artifactory-registry-ca'
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render Update Service Application CR'
+      template:
+        src: "templates/update-service-cr.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/update-service-cr.yml"
+        force: yes
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | Update Service Application CR '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/update-service-cr.yml -n openshift-update-service
+      register: update_svc_application_deployed
+
+    #- name: '{{ ansible_name_module }} | wait_for | wait for application to fully come up'
+    #  wait_for:
+    #    timeout: 20
+    #  delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get Update Service Application route '
+      command: >
+        {{ openshift_cli }} get updateservice {{ update_graphdata_application_name }} -o jsonpath='{.status.policyEngineURI}/api/upgrades_info/v1/graph{"\n"}' -n openshift-update-service
+      register: update_svc_graph_route_retrieved
+      until:
+        - update_svc_graph_route_retrieved.stdout is defined
+        - update_svc_graph_route_retrieved.stdout != ''
+        - " 'https' in update_svc_graph_route_retrieved.stdout or 'http' in update_svc_graph_route_retrieved.stdout"
+      retries: 5
+      delay: 10
+      changed_when: false
+
+    - name: '{{ ansible_name_module }} | shell:curl | Retrieve Update Service Application Graph '
+      shell: >
+        curl --header Accept:application/json \
+          --output /dev/stderr \
+          --write-out "%{http_code}" \
+          "{{ update_svc_graph_route_retrieved.stdout }}?channel={{ current_ocp_release_channel }}" 
+      args:
+        warn: no
+      when:
+        - update_svc_graph_route_retrieved.stdout is defined
+        - update_svc_graph_route_retrieved.stdout != ''
+      register: update_svc_graph
+      until:
+        - update_svc_graph.stdout is defined
+        - update_svc_graph.stdout != '' 
+        - " '200' in update_svc_graph.stdout "
+      retries: 10
+      delay: 10
+      changed_when: false
+
