@@ -39,18 +39,6 @@
         - not ocp_cluster_token is defined or ocp_cluster_token == ""
       register: login_out
 
-    #- name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries'
-    #  import_role:
-    #    name: copy-user-ca-bundle-cm-into-new-ca-bundle
-    #    tasks_from: create-additional-ca-cm-for-registries.yml
-    #  vars:
-    #    registries_trust_stores:
-    #      artifactory:
-    #        fqdn: '{{ registry_host_fqdn }}'
-    #        port: ''
-    #        ca_file_pem: './registry.crt'
-    #    registry_ca_bundle_cm_name: 'registry-config'
-
     - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create update service CA'
       import_role:
         name: copy-user-ca-bundle-cm-into-new-ca-bundle
@@ -75,11 +63,6 @@
         {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/update-service-cr.yml -n openshift-update-service
       register: update_svc_application_deployed
 
-    #- name: '{{ ansible_name_module }} | wait_for | wait for application to fully come up'
-    #  wait_for:
-    #    timeout: 20
-    #  delegate_to: localhost
-
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get Update Service Application route '
       command: >
         {{ openshift_cli }} get updateservice {{ update_graphdata_application_name }} -o jsonpath='{.status.policyEngineURI}/api/upgrades_info/v1/graph{"\n"}' -n openshift-update-service
@@ -92,17 +75,40 @@
       delay: 10
       changed_when: false
 
+    - name: '{{ ansible_name_module }} | command | Retrieve Update Service Application Hostname '
+      set_fact:
+        ous_host: "{{ (update_svc_graph_route_retrieved.stdout.split('https://')[1]).split('/')[0] }}"
+        ous_host_port: "{{ (update_svc_graph_route_retrieved.stdout.split('https://')[1]).split('/')[0] }}:443"
+      when:
+        - update_svc_graph_route_retrieved.stdout is defined
+        - update_svc_graph_route_retrieved.stdout != ''
+
+    - name: '{{ ansible_name_module }} | shell:openssl:s_client | Retrieve Update Service Application CA Certificate '
+      shell: >
+         openssl s_client -showcerts -connect {{ ous_host_port }} \
+          < /dev/null | sed -ne '/-BEGIN CERTIFICATE/,/END CERTIFICATE/p' \
+          > /tmp/ous-ca.crt
+      args:
+        warn: no
+      when:
+        - update_svc_graph_route_retrieved.stdout is defined
+        - update_svc_graph_route_retrieved.stdout != ''
+      delegate_to: localhost
+      register: update_svc_ca_retrieved
+
+
     - name: '{{ ansible_name_module }} | shell:curl | Retrieve Update Service Application Graph '
       shell: >
-        curl --header Accept:application/json \
+        curl --cacert /tmp/ous-ca.crt --header Accept:application/json \
           --output /dev/stderr \
           --write-out "%{http_code}" \
           "{{ update_svc_graph_route_retrieved.stdout }}?channel={{ current_ocp_release_channel }}" 
       args:
         warn: no
       when:
-        - update_svc_graph_route_retrieved.stdout is defined
-        - update_svc_graph_route_retrieved.stdout != ''
+        - update_svc_ca_retrieved is defined
+        - update_svc_ca_retrieved.rc is defined
+        - update_svc_ca_retrieved.rc == 0
       register: update_svc_graph
       until:
         - update_svc_graph.stdout is defined
