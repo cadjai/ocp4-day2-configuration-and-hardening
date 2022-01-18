@@ -118,3 +118,12 @@
       delay: 10
       changed_when: false
 
+    - name: '{{ ansible_name_module }} | update cluster service version'
+      command: >
+        {{ openshift_cli }} patch clusterversion version --type=merge -p '{"spec": {"upstream": "{{ update_svc_graph_route_retrieved.stdout }}" }}'
+      when:
+        - update_svc_graph is defined
+        - update_svc_graph.rc is defined
+        - update_svc_graph.rc== 0
+      register: cvo_patched
+
