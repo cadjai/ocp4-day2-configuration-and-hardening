@@ -249,6 +249,9 @@ operators_to_deploy:
     deploy_namespace: 'openshift-update-service'
     target_namespace: 'openshift-update-service' ### values are all, empty or list of ns names
     deploy_namespace_description: 'openshift-update-service'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    patch_namespace_annotations: '{"openshift.io/node-selector": ""}'
     deploy: 'false'
     create_namespace: 'true'
     create_catalog: 'false'
