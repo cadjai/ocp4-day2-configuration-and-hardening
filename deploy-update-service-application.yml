@@ -3,12 +3,21 @@
   become: yes
   vars:
     ansible_python_interpreter: /usr/bin/python3
+    module: "Deploy Cluster Update Service Application"
+    ansible_name_module: "Configure Update Service in disconnected | {{ module }}"
+    #trust_ingress_ca: 'false'
+    #existing_ca_bundle_cm_name: 'default-ingress-cert'
+    #existing_ca_bundle_cm_namespace: 'openshift-config-managed'
+    #new_ca_bundle_cm_name: 'default-ingress-cert-ca'
+    #new_ca_bundle_cm_namespace: 'openshift-config'
+    #create_new_ca_bundle_cm: 'true'
+    #new_ca_bundle_cm_file: '/tmp/default-ingress-ca.crt'
+    #update_new_ca_bundle_cm_namespace: 'true'
+    #existing_ca_bundle_cert_key: ''
+    #new_ca_bundle_cert_key: ''
   vars_files:
     - 'vars/vault.yml'
     - 'vars/global.yml'
-  vars:
-    module: "Deploy Cluster Update Service Application"
-    ansible_name_module: "Configure Update Service in disconnected | {{ module }}"
   pre_tasks:
     - name: Install required pip library
       pip:
@@ -50,6 +59,30 @@
             port: ''
             ca_file_pem: './registry.crt'
         registry_ca_bundle_cm_name: 'artifactory-registry-ca'
+
+    ##### This is being added to fix or workaround what seems to be a bug where OpenShift Cluster does not trust the Ingress CA ####
+    - name: '{{ ansible_name_module }} | Conditionally trust Ingress CA '
+      when:
+        - trust_ingress_ca is defined
+        - trust_ingress_ca | bool
+      block:
+        - name: '{{ ansible_name_module }} | import_tasks | Conditional import of main.yml to create Ingress CA in openshift-config NS to trust it'
+          import_role:
+            name: copy-user-ca-bundle-cm-into-new-ca-bundle
+            tasks_from: main.yml
+            registry_ca_bundle_cm_name: 'artifactory-registry-ca'
+
+        - name: Patch Proxy Config
+          command: >
+            {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name": "{{ new_ca_bundle_cm_name }}"}}}'
+
+        - name: Add empty ConfigMap to use as CA injection CM
+          command: >
+            {{ openshift_cli }} create configmap ingress-ca-bundle -n openshift-config
+
+        - name: Add label to empty ConfigMap created above to use as CA injection CM
+          command: >
+            {{ openshift_cli }} label configmap ingress-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config
 
   tasks:
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render Update Service Application CR'

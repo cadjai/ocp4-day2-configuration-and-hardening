@@ -512,6 +512,16 @@ update_graphdata_application_name: 'update-service'
 update_service_namespace: 'openshift-update-service'
 graphdata_replicas: 1
 current_ocp_release_channel: 'stable-4.7'
+trust_ingress_ca: 'false'
+existing_ca_bundle_cm_name: 'default-ingress-cert'
+existing_ca_bundle_cm_namespace: 'openshift-config-managed'
+new_ca_bundle_cm_name: 'default-ingress-cert-ca'
+new_ca_bundle_cm_namespace: 'openshift-config'
+create_new_ca_bundle_cm: 'true'
+new_ca_bundle_cm_file: '/tmp/default-ingress-ca.crt'
+update_new_ca_bundle_cm_namespace: 'true'
+existing_ca_bundle_cert_key: ''
+new_ca_bundle_cert_key: ''
 
 ###################################
 # end OpenShift Update Service config variables
