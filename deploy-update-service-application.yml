@@ -61,6 +61,8 @@
         registry_ca_bundle_cm_name: 'artifactory-registry-ca'
 
     ##### This is being added to fix or workaround what seems to be a bug where OpenShift Cluster does not trust the Ingress CA ####
+    # That is needed to provide the clusterversion the ability to pull graph for update from the OpenShift Update Service, 
+    # which is currently exposing the graph via a route instead of a service.    ####
     - name: '{{ ansible_name_module }} | Conditionally trust Ingress CA '
       when:
         - trust_ingress_ca is defined
