@@ -1,0 +1,9 @@
+apiVersion: updateservice.operator.openshift.io/v1 
+kind: UpdateService
+metadata:
+  name: {{ update_graphdata_application_name | default('graphdata-example') }}
+  namespace: {{ update_service_namespace | default('openshift-update-service') }}
+spec:
+  replicas: {{ graphdata_replicas | default('1') }}
+  releases: {{ registry_host_fqdn | default('quay.io') }}/{{ local_repository | default('openshift-release-dev') }}/{{ release_image_repository | default('ocp-release') }}
+  graphDataImage: {{ registry_host_fqdn }}/{{ local_repository }}/openshift/graph-data:latest
