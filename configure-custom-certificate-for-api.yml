@@ -138,7 +138,7 @@
 
             - name: '{{ ansible_name_module }} | config custom CA kubeconfig | get custom ca data from cm'
               shell: >
-                {{ openshift_cli }} extract cm/user-ca-bundle -n openshift-config --to={{ extracted_custom_ca_file | default('/tmp/', true) | dirname }} --confirm=true
+                {{ openshift_cli }} extract cm/{{ ingress_ca_cm_name | default('user-ca-bundle', false) }} -n openshift-config --to={{ extracted_custom_ca_file | default('/tmp/', true) | dirname }} --confirm=true
               ignore_errors: true
               register: custom_ca_data_file
 
