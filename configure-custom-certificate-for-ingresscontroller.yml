@@ -55,6 +55,31 @@
         - not ocp_cluster_token is defined or ocp_cluster_token == ""
       register: login_out
 
+    - name: '{{ ansible_name_module }} | Conditionally Create ConfigMap for Custom CA Bundle used for the ingress cert if not already provided'
+      when:
+        - add_custom_ca_bundle is defined
+        - add_custom_ca_bundle | bool
+        - ingress_ca_cm_name is defined
+        - ingress_ca_cm_name != ''
+        - custom_ca_bundle_file is defined
+        - custom_ca_bundle_file != ''
+      block:
+        - name: '{{ ansible_name_module }} | config custom CA ingress | check custom CA cert file'
+          stat:
+            path: "{{ custom_ca_bundle_file }}"
+          register: custom_ca_cert_file_exist
+
+        - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create Custom CA'
+          import_role:
+            name: copy-user-ca-bundle-cm-into-new-ca-bundle
+            tasks_from: create-additional-ca-cm-for-registries.yml
+          vars:
+            registries_trust_stores:
+              custom-ingress-ca:
+                fqdn: 'ca-bundle.crt'
+                port: ''
+                ca_file_pem: '{{ custom_ca_bundle_file }}'
+
     - name: '{{ ansible_name_module }} Check Custom Ingress controller Certificate files'
       block:
         - name: '{{ ansible_name_module }} | config custom CA ingress | check custom cert file'

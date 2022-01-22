@@ -455,6 +455,8 @@ add_custom_ca_ingess: 'false'
 ingress_ca_cm_name: ''
 ingress_cert_file: ''
 ingress_cert_key_file: ''
+add_custom_ca_bundle: 'false'
+custom_ca_bundle_file: ''
 
 #################################
 # End Ingress Controller Custom Certificate Variables
