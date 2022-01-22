@@ -1,0 +1,116 @@
+unqualified-search-registries = ["registry.access.redhat.com", "docker.io"]
+
+{% if (operator_repository_paths is defined and operator_repository_paths | length > 0) and (operator_source_repository_paths is defined and operator_source_repository_paths | length > 0) %}
+{% for src_repo_path in operator_source_repository_paths %}
+[[registry]]
+  prefix = ""
+  location = "{{ src_repo_path }}"
+  mirror-by-digest-only = false
+
+  [[registry.mirror]]
+    location = "{{ operator_repository_paths[loop.index0] }}"
+
+{% endfor %}
+{% endif %}
+
+[[registry]]
+  prefix = ""
+  location = "quay.io/openshift-release-dev/ocp-release"
+  mirror-by-digest-only = false
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/openshift-release-dev"
+
+[[registry]]
+  prefix = ""
+  location = "quay.io/openshift-release-dev/ocp-v4.0-art-dev"
+  mirror-by-digest-only = false
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/openshift-release-dev"
+
+[[registry]]
+  prefix = ""
+  location = "registry.redhat.io/rh-acs"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/rh-acs"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "registry.redhat.io"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "registry.redhat.io/openshift4"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/openshift4"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "quay.io"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "docker.io"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "registry.connect.redhat.com"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "gcr.io"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "registry.access.redhat.com"
+  mirror-by-digest-only = false
+  insecure = true
+
+  [[registry.mirror]]
+    location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+    insecure = true
+
+[[registry]]
+  prefix = ""
+  location = "{{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}"
+  insecure = true
+

@@ -7,6 +7,7 @@ ocp_cluster_user: '{{ vault_ocp_cluster_user }}'
 ocp_cluster_user_password: '{{ vault_ocp_cluster_user_password }}'
 ocp_cluster_console_url: '{{ vault_ocp_cluster_console_url }}'
 ocp_cluster_console_port: '6443'
+use_operator_template: 'false'
 
 staging_dir: '/tmp'
 disconnected_operatorhub_config: 'patched-operatorhub.yml'

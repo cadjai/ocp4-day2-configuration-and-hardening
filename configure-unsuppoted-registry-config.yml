@@ -55,11 +55,18 @@
            registry_local_ocp_repository: "{{'/' + ocp_local_repository if ocp_local_repository is defined and ocp_local_repository != ''  else '' }}"
            registry_local_operator_repository: "{{'/' + operator_local_repository if operator_local_repository is defined and operator_local_repository != ''  else '' }}"
 
+       - name: '{{ ansible_name_module }} | import_role | import tasks to derive catalog source and ICSP files and repository paths'
+         import_role:
+           name: config-disconnected-olm
+           tasks_from: fetch-operator-catalogs-and-icsp-files.yml
+
        - name: '{{ ansible_name_module }} | template | Copy registry config to staging location'
          template:
-           src: "templates/registry.conf.j2"
+           src: "templates/{{ reg_conf_template }}"
            dest: "{{ staging_dir | d('/tmp', true) }}/registry.conf"
            force: yes
+         vars:
+           reg_conf_template: "{{ 'operator-registry.conf.j2' if use_operator_template is defined and use_operator_template | bool else 'registry.conf.j2' }}"
          register: registry_conf_copied
 
        - name: '{{ ansible_name_module }} | command:cat | Load registry_conf'
