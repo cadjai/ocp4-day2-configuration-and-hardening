@@ -37,6 +37,7 @@
         - name: '{{ ansible_name_module }} | set_fact | set auditd.rules template file'
           set_fact:
             rule_template_file: "{{ 'auditd.rules-all.j2' if audit_rules_apply_all is defined and audit_rules_apply_all | bool else 'auditd.rules.j2' }}"
+            system_is_64b: "{{ true }}"  ### Add task to dynamically derive this for node types
 
         - name: '{{ ansible_name_module }} | template | Copy auditd rule config to staging location'
           template:
