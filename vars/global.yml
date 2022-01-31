@@ -380,7 +380,12 @@ make_directory_access_var_log_audit: 'true'
 auditd_conf_path: '/etc/audit/auditd.conf'
 auditd_rule_conf_path: '/etc/audit/rules.d/audit.rules'
 fips_enabled: 'true'
-
+audit_rules_apply_all: 'true'
+make_audit_usergroups_actions: 'true'
+make_audit_discretionary_access_control_commands: 'true'
+make_audit_unsuccessful_ownership_permissions_modification: 'true'
+make_audit_unsuccessful_delete_actions: 'true'
+make_audit_unsuccessful_access: 'true'
 
 #####################################################################################################
 # End of hardening auditd variables
