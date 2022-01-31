@@ -1,0 +1,707 @@
+### The file will be placed in /etc/audit/rules.d/audit.rules and used to overwrite auditd conf
+## First rule - delete all
+-D
+
+## Increase the buffers to survive stress events.
+## Make this bigger for busy systems
+-b 8192
+
+## This determine how long to wait in burst of events
+--backlog_wait_time 60000
+
+## Set failure mode to syslog
+-f 1
+
+##  Record Events that Modify the System's Discretionary Access Controls
+-a always,exit -F arch=b32 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -F key=perm_mod
+-a always,exit -F arch=b32 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=unset -F key=perm_mod
+-a always,exit -F arch=b32 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -F key=perm_mod
+-a always,exit -F arch=b64 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=unset -F key=perm_mod
+-a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - chmod
+-a always,exit -F arch=b32 -S chmod -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S chmod -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - chown 
+-a always,exit -F arch=b32 -S chown -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S chown -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - fchmod 
+-a always,exit -F arch=b32 -S fchmod -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchmod -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - fchmodat 
+-a always,exit -F arch=b32 -S fchmodat -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchmodat -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - fchown
+-a always,exit -F arch=b32 -S fchown -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchown -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - fchownat 
+-a always,exit -F arch=b32 -S fchownat -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchownat -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - fremovexattr
+-a always,exit -F arch=b32 -S fremovexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fremovexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - fsetxattr 
+-a always,exit -F arch=b32 -S fsetxattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fsetxattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - lchown 
+-a always,exit -F arch=b32 -S lchown -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S lchown -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - lremovexattr
+-a always,exit -F arch=b32 -S lremovexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S lremovexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - lsetxattr 
+-a always,exit -F arch=b32 -S lsetxattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S lsetxattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - removexattr 
+-a always,exit -F arch=b32 -S removexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S removexattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Events that Modify the System's Discretionary Access Controls - setxattr 
+-a always,exit -F arch=b32 -S setxattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S setxattr -F auid>=1000 -F auid!=unset -F key=perm_mod
+{% endif %}
+
+## Record Any Attempts to Run chcon
+-a always,exit -F path=/usr/bin/chcon -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Record Any Attempts to Run restorecon
+-a always,exit -F path=/usr/sbin/restorecon -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Record Any Attempts to Run semanage
+-a always,exit -F path=/usr/sbin/semanage -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Record Any Attempts to Run setfiles
+-a always,exit -F path=/usr/sbin/setfiles -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Record Any Attempts to Run setsebool 
+-a always,exit -F path=/usr/sbin/setsebool -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Record Any Attempts to Run seunshare
+-a always,exit -F path=/usr/sbin/seunshare -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Record File Deletion Events by User
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S rmdir,unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -F key=delete
+{% else %}
+-a always,exit -F arch=b32 -S rmdir,unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -F key=delete
+{% endif %}
+
+## Ensure auditd Collects File Deletion Events by User - rename 
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S rename -F auid>=1000 -F auid!=unset -F key=delete
+{% else %}
+-a always,exit -F arch=b32 -S rename -F auid>=1000 -F auid!=unset -F key=delete
+{% endif %}
+
+## Ensure auditd Collects File Deletion Events by User - renameat
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S renameat -F auid>=1000 -F auid!=unset -F key=delete
+{% else %}
+-a always,exit -F arch=b32 -S renameat -F auid>=1000 -F auid!=unset -F key=delete
+{% endif %}
+
+## Ensure auditd Collects File Deletion Events by User - rmdir 
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S rmdir -F auid>=1000 -F auid!=unset -F key=delete
+{% else %}
+-a always,exit -F arch=b32 -S rmdir -F auid>=1000 -F auid!=unset -F key=delete
+{% endif %}
+
+## Ensure auditd Collects File Deletion Events by User - unlink 
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S unlink -F auid>=1000 -F auid!=unset -F key=delete
+{% else %}
+-a always,exit -F arch=b32 -S unlink -F auid>=1000 -F auid!=unset -F key=delete
+{% endif %}
+
+## Ensure auditd Collects File Deletion Events by User - unlinkat
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S unlinkat -F auid>=1000 -F auid!=unset -F key=delete
+{% else %}
+-a always,exit -F arch=b32 -S unlinkat -F auid>=1000 -F auid!=unset -F key=delete
+
+## Record Unauthorized Access Attempts Events to Files (unsuccessful)
+-a always,exit -F arch=b32 -S creat,open,openat,open_by_handle_at,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S creat,open,openat,open_by_handle_at,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b32 -S creat,open,openat,open_by_handle_at,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S creat,open,openat,open_by_handle_at,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - chmod 
+-a always,exit -F arch=b32 -S chmod -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S chmod -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b32 -S chmod -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S chmod -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Ownership Changes to Files - chown
+-a always,exit -F arch=b32 -S chown -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S chown -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S chown -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S chown -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessful Access Attempts to Files - creat 
+-a always,exit -F arch=b32 -S creat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S creat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S creat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b64 -S creat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - fchmod 
+-a always,exit -F arch=b32 -S fchmod -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S fchmod -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchmod -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S fchmod -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - fchmodat
+-a always,exit -F arch=b32 -S fchmodat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S fchmodat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchmodat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S fchmodat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Ownership Changes to Files - fchown 
+-a always,exit -F arch=b32 -S fchown -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S fchown -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchown -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S fchown -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Ownership Changes to Files - fchownat 
+-a always,exit -F arch=b32 -S fchownat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S fchownat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fchownat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S fchownat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - fremovexattr
+-a always,exit -F arch=b32 -S fremovexattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S fremovexattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fremovexattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S fremovexattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - fsetxattr
+-a always,exit -F arch=b32 -S fsetxattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S fsetxattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S fsetxattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S fsetxattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessful Access Attempts to Files - ftruncate
+-a always,exit -F arch=b32 -S ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S ftruncate -F exiu=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b64 -S ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessul Ownership Changes to Files - lchown
+-a always,exit -F arch=b32 -S lchown -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S lchown -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S lchown -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S lchown -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - lremovexattr 
+-a always,exit -F arch=b32 -S lremovexattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S lremovexattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S lremovexattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S lremovexattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - lsetxattr
+-a always,exit -F arch=b32 -S lsetxattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S lsetxattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S lsetxattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S lsetxattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessful Access Attempts to Files - open
+-a always,exit -F arch=b32 -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b64 -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessful Access Attempts to Files - open_by_handle_at 
+-a always,exit -F arch=b32 -S open_by_handle_at -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S open_by_handle_at -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b64 -S open_by_handle_at -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessful Creation Attempts to Files - open_by_handle_at O_CREAT 
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+{% endif %}
+
+## Record Unsuccessful Modification Attempts to Files - open_by_handle_at O_TRUNC_WRITE
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+{% endif %}
+
+## Ensure auditd Unauthorized Access Attempts To open_by_handle_at Are Ordered Correctly
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S open_by_handle_at -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+-a always,exit -F arch=b32 -S open_by_handle_at -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S open_by_handle_at -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+-a always,exit -F arch=b64 -S open_by_handle_at -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+{% endif %}
+
+## Record Unsuccessful Creation Attempts to Files - open O_CREAT 
+-a always,exit -F arch=b32 -S open -F a1&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S open -F a1&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S open -F a1&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+{% endif %}
+
+## Record Unsuccessful Modification Attempts to Files - open O_TRUNC_WRITE
+-a always,exit -F arch=b32 -S open -F a1&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S open -F a1&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S open -F a1&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+{% endif %}
+
+## Ensure auditd Rules For Unauthorized Attempts To open Are Ordered Correctly
+-a always,exit -F arch=b32 -S open -F a1&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S open -F a1&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S open -F a1&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S open -F a1&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+-a always,exit -F arch=b32 -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S open -F a1&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S open -F a1&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S open -F a1&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+-a always,exit -F arch=b64 -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+{% endif %}
+
+## Record Unsuccessful Access Attempts to Files - openat
+-a always,exit -F arch=b32 -S openat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S openat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b64 -S openat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessful Creation Attempts to Files - openat O_CREAT
+-a always,exit -F arch=b32 -S openat -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S openat -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S openat -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+{% endif %}
+
+## Record Unsuccessful Modification Attempts to Files - openat O_TRUNC_WRITE
+-a always,exit -F arch=b32 -S openat -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S openat -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S openat -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+{% endif %}
+
+## Ensure auditd Rules For Unauthorized Attempts To openat Are Ordered Correctly 
+-a always,exit -F arch=b32 -S openat -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S openat -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b32 -S openat -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S openat -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b32 -S openat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+-a always,exit -F arch=b32 -S openat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&0100 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S openat -F a2&0100 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-create
+-a always,exit -F arch=b64 -S openat -F a2&01003 -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S openat -F a2&01003 -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-modification
+-a always,exit -F arch=b64 -S openat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+-a always,exit -F arch=b64 -S openat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-access
+{% endif %}
+
+## Record Unsuccessul Permission Changes to Files - removexattr
+-a always,exit -F arch=b32 -S removexattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S removexattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S removexattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S removexattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessul Delete Attempts to Files - rename
+-a always,exit -F arch=b32 -S rename -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b32 -S rename -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S rename -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b64 -S rename -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% endif %}
+
+## Record Unsuccessul Delete Attempts to Files - renameat 
+-a always,exit -F arch=b32 -S renameat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b32 -S renameat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S renameat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b64 -S renameat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% endif %}
+
+##  Record Unsuccessul Permission Changes to Files - setxattr 
+-a always,exit -F arch=b32 -S setxattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b32 -S setxattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S setxattr -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+-a always,exit -F arch=b64 -S setxattr -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccesful-perm-change
+{% endif %}
+
+## Record Unsuccessful Access Attempts to Files - truncate
+-a always,exit -F arch=b32 -S truncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b32 -S truncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S truncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=access
+-a always,exit -F arch=b64 -S truncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=access
+{% endif %}
+
+## Record Unsuccessul Delete Attempts to Files - unlink 
+-a always,exit -F arch=b32 -S unlink -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b32 -S unlink -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S unlink -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b64 -S unlink -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% endif %}
+
+## Record Unsuccessul Delete Attempts to Files - unlinkat
+-a always,exit -F arch=b32 -S unlinkat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b32 -S unlinkat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S unlinkat -F exit=-EACCES -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+-a always,exit -F arch=b64 -S unlinkat -F exit=-EPERM -F auid>=1000 -F auid!=unset -F key=unsuccessful-delete
+{% endif %}
+
+## Record Information on Kernel Modules Loading and Unloading
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S init_module,delete_module -F key=modules
+{% else %}
+-a always,exit -F arch=b32 -S init_module,delete_module -F key=modules
+{% endif %}
+
+## Ensure auditd Collects Information on Kernel Module Unloading - delete_module 
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S delete_module -F key=modules
+{% else %}
+-a always,exit -F arch=b32 -S delete_module -F key=modules
+{% endif %}
+
+## Ensure auditd Collects Information on Kernel Module Loading and Unloading - finit_module
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S finit_module -F key=modules
+{% else %}
+-a always,exit -F arch=b32 -S finit_module -F key=modules
+{% endif %}
+
+## Ensure auditd Collects Information on Kernel Module Loading - init_module
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S init_module -F key=modules
+{% else %}
+-a always,exit -F arch=b32 -S init_module -F key=modules
+{% endif %}
+
+## Record Attempts to Alter Logon and Logout Events 
+## Record Attempts to Alter Logon and Logout Events - faillock
+-w /var/run/faillock -p wa -k logins
+
+## Record Attempts to Alter Logon and Logout Events - lastlog
+-w /var/log/lastlog -p wa -k logins
+
+## Record Attempts to Alter Logon and Logout Events - tallylog
+-w /var/log/tallylog -p wa -k logins
+
+## Record Information on the Use of Privileged Commands
+## Ensure auditd Collects Information on the Use of Privileged Commands - at
+-a always,exit -F path=/usr/bin/at -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - chage
+-a always,exit -F path=/usr/bin/chage -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - chsh 
+-a always,exit -F path=/usr/bin/chsh -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - crontab 
+-a always,exit -F path=/usr/bin/crontab -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - gpasswd
+-a always,exit -F path=/usr/bin/gpasswd -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - mount
+-a always,exit -F path=/usr/bin/mount -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - newgidmap
+-a always,exit -F path=/usr/bin/newgidmap -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - newgrp
+-a always,exit -F path=/usr/bin/newgrp -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - newuidmap
+-a always,exit -F path=/usr/bin/newuidmap -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - pam_timestamp_check 
+-a always,exit -F path=/usr/sbin/pam_timestamp_check
+-F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - passwd 
+-a always,exit -F path=/usr/bin/passwd -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - postdrop
+-a always,exit -F path=/usr/sbin/postdrop -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - postqueue 
+-a always,exit -F path=/usr/sbin/postqueue -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - pt_chown
+-a always,exit -F path=/usr/libexec/pt_chown -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - ssh-keysign 
+-a always,exit -F path=/usr/libexec/openssh/ssh-keysign -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - su
+-a always,exit -F path=/usr/bin/su -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - sudo
+-a always,exit -F path=/usr/bin/sudo -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - sudoedit 
+-a always,exit -F path=/usr/bin/sudoedit -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - umount
+-a always,exit -F path=/usr/bin/umount -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - unix_chkpwd 
+-a always,exit -F path=/usr/sbin/unix_chkpwd -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - userhelper
+-a always,exit -F path=/usr/sbin/userhelper -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Ensure auditd Collects Information on the Use of Privileged Commands - usernetctl 
+-a always,exit -F path=/usr/sbin/usernetctl -F auid>=1000 -F auid!=unset -F key=privileged
+
+## Records Events that Modify Date and Time Information
+## Record attempts to alter time through adjtimex
+-a always,exit -F arch=b32 -S adjtimex -F key=audit_time_rules
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S adjtimex -F key=audit_time_rules
+{% endif %}
+
+## Record Attempts to Alter Time Through clock_settime
+-a always,exit -F arch=b32 -S clock_settime -F a0=0x0 -F key=time-change
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S clock_settime -F a0=0x0 -F key=time-change
+{% endif %}
+
+## Record attempts to alter time through settimeofday 
+-a always,exit -F arch=b32 -S settimeofday -F key=audit_time_rules
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S settimeofday -F key=audit_time_rules
+{% endif %}
+
+## Record Attempts to Alter Time Through stime
+-a always,exit -F arch=b32 -S stime -F key=audit_time_rules
+
+## Record Attempts to Alter the localtime File
+-w /etc/localtime -p wa -k audit_time_rules
+
+## Record Events that Modify User/Group Information via open syscall - /etc/group
+-a always,exit -F arch=b32 -S open -F a1&03 -F path=/etc/group -F auid>=1000 -F auid!=unset -F key=modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&03 -F path=/etc/group -F auid>=1000 -F auid!=unset -F key=modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open_by_handle_at syscall - /etc/group
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&03 -F path=/etc/group -F auid>=1000 -F auid!=unset -F key=modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&03 -F path=/etc/group -F auid>=1000 -F auid!=unset -F key=modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via openat syscall - /etc/group 
+-a always,exit -F arch=b32 -S openat -F a2&03 -F path=/etc/group -F auid>=1000 -F auid!=unset -F key=modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&03 -F path=/etc/group -F auid>=1000 -F auid!=unset -F key=modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open syscall - /etc/gshadow
+-a always,exit -F arch=b32 -S open -F a1&03 -F path=/etc/gshadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&03 -F path=/etc/gshadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open_by_handle_at syscall - /etc/gshadow
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&03 -F path=/etc/gshadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&03 -F path=/etc/gshadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via openat syscall - /etc/gshadow
+-a always,exit -F arch=b32 -S openat -F a2&03 -F path=/etc/gshadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&03 -F path=/etc/gshadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open syscall - /etc/passwd
+-a always,exit -F arch=b32 -S open -F a1&03 -F path=/etc/passwd -F auid>=1000 -F auid!=unset -F key=modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&03 -F path=/etc/passwd -F auid>=1000 -F auid!=unset -F key=modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open_by_handle_at syscall - /etc/passwd
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&03 -F path=/etc/passwd -F auid>=1000 -F auid!=unset -F key=modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&03 -F path=/etc/passwd -F auid>=1000 -F auid!=unset -F key=modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via openat syscall - /etc/passwd 
+-a always,exit -F arch=b32 -S openat -F a2&03 -F path=/etc/passwd -F auid>=1000 -F auid!=unset -F key=modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&03 -F path=/etc/passwd -F auid>=1000 -F auid!=unset -F key=modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open syscall - /etc/shadow
+-a always,exit -F arch=b32 -S open -F a1&03 -F path=/etc/shadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open -F a1&03 -F path=/etc/shadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via open_by_handle_at syscall - /etc/shadow
+-a always,exit -F arch=b32 -S open_by_handle_at -F a2&03 -F path=/etc/shadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S open_by_handle_at -F a2&03 -F path=/etc/shadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% endif %}
+
+## Record Events that Modify User/Group Information via openat syscall - /etc/shadow
+-a always,exit -F arch=b32 -S openat -F a2&03 -F path=/etc/shadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S openat -F a2&03 -F path=/etc/shadow -F auid>=1000 -F auid!=unset -F key=user-modify
+{% endif %}
+
+## Make the auditd Configuration Immutable
+-e 2
+
+## Record Events that Modify the System's Mandatory Access Controls
+-w /etc/selinux/ -p wa -k MAC-policy
+
+## Ensure auditd Collects Information on Exporting to Media (successful) 
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -F key=export
+{% else %}
+-a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -F key=export
+{% endif %}
+
+## Record Events that Modify the System's Network Environment 
+{% if system_is_64b is defined and system_is_64b | bool %}
+-a always,exit -F arch=b64 -S sethostname,setdomainname -F key=audit_rules_networkconfig_modification
+-w /etc/issue -p wa -k audit_rules_networkconfig_modification
+-w /etc/issue.net -p wa -k audit_rules_networkconfig_modification
+-w /etc/hosts -p wa -k audit_rules_networkconfig_modification
+-w /etc/sysconfig/network -p wa -k audit_rules_networkconfig_modification
+{% else %}
+-a always,exit -F arch=b32 -S sethostname,setdomainname -F key=audit_rules_networkconfig_modification
+-w /etc/issue -p wa -k audit_rules_networkconfig_modification
+-w /etc/issue.net -p wa -k audit_rules_networkconfig_modification
+-w /etc/hosts -p wa -k audit_rules_networkconfig_modification
+-w /etc/sysconfig/network -p wa -k audit_rules_networkconfig_modification
+{% endif %}
+
+## Record Attempts to Alter Process and Session Initiation Information
+-w /var/run/utmp -p wa -k session
+-w /var/log/btmp -p wa -k session
+-w /var/log/wtmp -p wa -k session
+
+## Ensure auditd Collects System Administrator Actions
+-w /etc/sudoers -p wa -k actions
+-w /etc/sudoers.d/ -p wa -k actions
+
+## Record Events that Modify User/Group Information - /etc/group
+-w /etc/group -p wa -k audit_rules_usergroup_modification
+
+## Record Events that Modify User/Group Information - /etc/gshadow
+-w /etc/gshadow -p wa -k audit_rules_usergroup_modification
+
+## Record Events that Modify User/Group Information - /etc/security/opasswd 
+-w /etc/security/opasswd -p wa -k audit_rules_usergroup_modification
+
+## Record Events that Modify User/Group Information - /etc/passwd
+-w /etc/passwd -p wa -k audit_rules_usergroup_modification
+
+## Record Events that Modify User/Group Information - /etc/shadow
+-w /etc/shadow -p wa -k audit_rules_usergroup_modification
+
+## Record Access Events to Audit Log Directory 
+-a always,exit -F dir=/var/log/audit/ -F perm=r -F auid>=1000 -F auid!=unset -F key=access-audit-trail
+
