@@ -21,9 +21,9 @@
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} adm taint | taint infra nodes'
   command: >
-    {{ openshift_cli }} adm taint nodes {{ item.stdout }} node-role.kubernetes.io/{{ infra_label }}:NoSchedule --overwrite=true
+    {{ openshift_cli }} adm taint nodes {{ item.stdout }} node-role.kubernetes.io/{{ infra_label }} {{ infra_label }}={{ infra_taint_value | default('reserved',false) }}:NoSchedule {{ infra_label }}={{ infra_taint_value | default('reserved', false) }}:NoExecute --overwrite=true
   loop: "{{ infra_node_names.results }}"
-
+ 
 - name: '{{ ansible_name_module }} | Move Ingress Controller to Infra nodes'
   when:
     - relocate_ingress_controller is defined
@@ -56,7 +56,7 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | ingress controller add tolerations infra nodes'
       command: >
-        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"tolerations":[{"key": "node-role.kubernetes.io/{{ infra_label }}", "operator": "Exists", "effect": "NoSchedule"}] }}}'
+        {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type merge -p '{"spec":{"nodePlacement":{"tolerations":[{"effect":"NoSchedule","key": "{{ infra_label }}","value": "{{ infra_taint_value | default('reserved', false) }}"},{"effect":"NoExecute","key": "{{ infra_label }}","value": "{{ infra_taint_value | default('reserved', false) }}"}] }}}'
       register: ingress_controller_tolerated
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | ingress controller tolerations'
@@ -76,7 +76,7 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | image registry add tolerations'
       command: >
-        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type merge -p '{"spec":{"tolerations":[{"key": "node-role.kubernetes.io/{{ infra_label }}", "operator": "Exists", "effect": "NoSchedule"}] }}'
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type merge -p '{"spec":{"tolerations":[{"effect":"NoSchedule","key": "{{ infra_label }}","value": "{{ infra_taint_value | default('reserved', false) }}"},{"effect":"NoExecute","key": "{{ infra_label }}","value": "{{ infra_taint_value | default('reserved', false) }}"}] }}'
       register: image_registry_tolerated
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | image registry'
