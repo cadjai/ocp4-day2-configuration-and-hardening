@@ -9,90 +9,90 @@ data:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
-      - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     prometheusK8s:
       retention: {{ prometheus_retention | d('24h') }}
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     prometheusOperator:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     grafana:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     k8sPrometheusAdapter:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     kubeStateMetrics:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     telemeterClient:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     openshiftStateMetrics:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
     thanosQuerier:
       nodeSelector:
         node-role.kubernetes.io/{{ infra_label }}: ""
       tolerations:
-      - key: node-role.kubernetes.io/worker
-        operator: Exists
+      - key: {{ infra_label }}
+        value: {{ infra_taint_value | default('reserved', false) }}
         effect: NoSchedule
       - key: node-role.kubernetes.io/{{ infra_label }}
-        operator: Exists
-        effect: NoSchedule
+        value: {{ infra_taint_value | default('reserved', false) }}
+        effect: NoExecute
