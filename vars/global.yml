@@ -260,6 +260,7 @@ operators_to_deploy:
     index_image: 'cincinnati-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
 
 ################## Infra nodes configuration #################################
+infra_taint_value: 'reserved'
 infranodes:
   infra-az1:
     aws_region: 'us-east-1'
