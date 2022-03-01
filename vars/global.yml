@@ -45,6 +45,7 @@ operator_catalogs_to_deploy:
     content_source_file: '/path/to/certified-operator-index-manifests/imageContentSourcePolicy.yaml'
     mirror: "false"
 
+use_single_index_per_operator: 'false'
 operators_to_deploy:
   group-sync-operator:
     group_name: 'group-sync-operator-group'
@@ -242,6 +243,223 @@ operators_to_deploy:
     create_catalog: 'false'
     create_catalog_group: 'true'
     index_image: 'redhat-operator-index'
+
+  cincinnati-operator:  ### name of the operator as it was used to mirror the operator
+    group_name: 'openshift-update-service-group'
+    catalog_name: 'custom-cincinnati-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-update-service'
+    target_namespace: 'openshift-update-service' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-update-service'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    patch_namespace_annotations: '{"openshift.io/node-selector": ""}'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'cincinnati-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+operators_to_deploy_single_index:
+  group-sync-operator:
+    group_name: 'group-sync-operator-group'
+    catalog_name: 'custom-group-sync-operator'
+    sub_channel: 'alpha'
+    deploy_namespace: 'group-sync-operator'  ## used for where the operator is deployed
+    target_namespace: 'group-sync-operator'  ## used for the scope of operator
+    deploy_namespace_description: 'group-sync-operator'
+    deploy: 'false'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'false'
+    index_image: 'group-sync-operator-index'
+
+  file-integrity-operator:
+    group_name: 'file-integrity-operator-group'
+    catalog_name: 'custom-file-integrity-operator'
+    sub_channel: '4.7'
+    deploy_namespace: 'openshift-file-integrity'
+    target_namespace: 'openshift-file-integrity' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-file-integrity'
+    deploy: 'false'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'file-integrity-operator-index'
+    index_image_tag: 'v4.7'
+
+  compliance-operator:
+    group_name: 'compliance-operator-group'
+    catalog_name: 'custom-compliance-operator'
+    sub_channel: '4.7'
+    deploy_namespace: 'openshift-compliance'
+    target_namespace: 'openshift-compliance'
+    deploy_namespace_description: 'openshift-compliance'
+    deploy: 'false'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'compliance-operator-index'
+    index_image_tag: 'v4.7'
+
+  costmanagement-metrics-operator:
+    group_name: 'costmanagement-metrics-operator-group'
+    catalog_name: 'custom-costmanagement-metrics-operator'
+    sub_channel: 'stable'
+    deploy_namespace: 'costmanagement-metrics-operator' ### values are all, empty or list of ns names
+    target_namespace: 'costmanagement-metrics-operator'
+    deploy_namespace_description: 'costmanagement-metrics-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'costmanagement-metrics-operator-index'
+    index_image_tag: 'latest'
+
+  namespace-configuration-operator:
+    group_name: 'namespace-configuration-operator-group'
+    catalog_name: 'custom-namespace-configuration-operator'
+    sub_channel: 'alpha'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace: 'namespace-configuration-operator'
+    deploy_namespace_description: 'namespace-configuration-operator'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'namespace-configuration-operator-index'
+    index_image_tag: 'latest'
+
+  elasticsearch-operator:
+    group_name: 'elasticsearch-operator-group'
+    catalog_name: 'custom-elasticsearch-operator'
+    sub_channel: '5.0'
+    deploy_namespace: 'openshift-operators-redhat'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-operators-redhat'
+    deploy: 'false'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'elasticsearch-operator-index'
+    index_image_tag: 'v4.7'
+    create_rolebinding: 'true'
+    rolebindingconfig: 'templates/elasticsearch-rolebinding.yml'
+
+  cluster-logging:
+    group_name: 'cluster-logging-operator-group'
+    catalog_name: 'custom-cluster-logging'
+    sub_channel: '5.0'
+    deploy_namespace: 'openshift-logging'
+    target_namespace: 'openshift-logging'  ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-logging'
+    deploy: 'false'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true", "openshift.io/cluster-logging": "true"}'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'cluster-logging-index'
+    create_customresource: 'true'
+    customresource_template: 'templates/cluster-logging-customresource.yml.j2'
+    es_node_count: 3
+    es_pv_size: '200G'
+    es_storageclass: ''
+    es_maxage_app: '1d'
+    es_maxage_infra: '7d'
+    es_maxage_audit: '7d'
+    es_memory: '32Gi'
+    es_proxy_memory_request: '1Gi'
+    es_proxy_memory_limit: '1Gi'
+    es_apply_toleration: 'true'
+    es_apply_nodeselector: 'true'
+
+  costmanagement-metrics-operator:
+    group_name: 'costmanagement-metrics-operator-group'
+    catalog_name: 'custom-costmanagement-metrics-operator'
+    sub_channel: 'stable'
+    csv_version: 'costmanagement-metrics-operator.1.1.0'
+    deploy_namespace: 'costmanagement-metrics-operator'
+    target_namespace: 'costmanagement-metrics-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'costmanagement-metrics-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'costmanagement-metrics-operator-index'
+    index_image_tag: 'v4.7'
+
+  jupyterlab-operator:
+    group_name: 'jupyterlab-operator-group'
+    catalog_name: 'custom-jupyterlab-operator'
+    sub_channel: 'stable'
+    csv_version: 'jupyterlab-operator.v1.0.0'
+    deploy_namespace: 'openshift-operators'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'jupyterlab-operator'
+    deploy: 'true'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'false'
+    index_image: 'jupyterlab-operator-index'
+
+  keycloak-operator:
+    group_name: 'keycloak-operator-group'
+    catalog_name: 'custom-keycloak-operator'
+    sub_channel: 'alpha'
+    csv_version: 'keycloak-operator.v13.0.1'
+    deploy_namespace: 'keycloak-operator'
+    target_namespace: 'keycloak-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'keycloak-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'keycloak-operator-index'
+
+  rhsso-operator:
+    group_name: 'rhsso-operator-group'
+    catalog_name: 'custom-rhsso-operator'
+    sub_channel: 'alpha'
+    csv_version: 'rhsso-operator.7.4.9'
+    deploy_namespace: 'rhsso-operator'
+    target_namespace: 'rhsso-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'rhsso-operator'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'rhsso-operator-index'
+    index_image_tag: 'v4.7'
+
+  rhacs-operator:
+    group_name: 'rhacs-operator-group'
+    catalog_name: 'custom-rhacs-operator'
+    sub_channel: 'latest'
+    deploy_namespace: 'openshift-operators-redhat'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-operators-redhat'
+    deploy: 'true'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'rhacs-operator-index'
+    index_image_tag: 'v4.7'
+
+  advanced-cluster-management:
+    group_name: 'advanced-cluster-management-group'
+    catalog_name: 'custom-advanced-cluster-management'
+    sub_channel: 'release-2.3'
+    deploy_namespace: 'open-cluster-management'
+    target_namespace: 'open-cluster-management' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'open-cluster-management'
+    deploy: 'false'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'advanced-cluster-management-index'
 
   cincinnati-operator:  ### name of the operator as it was used to mirror the operator
     group_name: 'openshift-update-service-group'

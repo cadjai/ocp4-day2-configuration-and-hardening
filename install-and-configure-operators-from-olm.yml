@@ -43,6 +43,13 @@
         - configure_disconnected_OLM is defined
         - configure_disconnected_OLM | bool 
 
+    - name: Overwrite operator_to_deploy variable if necessary 
+      set_fact:
+        operators_to_deploy: "{{ operators_to_deploy_single_index }}"
+      when:
+        - use_single_index_per_operator is defined
+        - use_single_index_per_operator | bool
+
     - name: Deploy operators from OLM
       import_role:
         name: deploy-operators-from-olm 
