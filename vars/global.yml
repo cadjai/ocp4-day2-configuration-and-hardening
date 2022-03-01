@@ -530,6 +530,7 @@ new_ca_bundle_cm_file: '/tmp/default-ingress-ca.crt'
 update_new_ca_bundle_cm_namespace: 'true'
 existing_ca_bundle_cert_key: ''
 new_ca_bundle_cert_key: ''
+registry_ca_file: ''
 
 ###################################
 # end OpenShift Update Service config variables

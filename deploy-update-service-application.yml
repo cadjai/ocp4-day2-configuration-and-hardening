@@ -29,6 +29,31 @@
         dependencies:
           - openshift
           - requests
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - registry_ca_file is defined and registry_ca_file != ''
+            msg: " the registry_ca_file must be set to a valid pem certificate file path "
+
+        ### This is to handle cases where the file might be in a relative path
+        - name: '{{ ansible_name_module }} | check registry cert file'
+          set_fact:
+            registry_ca_file_path: "{{ registry_ca_file if registry_ca_file is regex('^/') else '../' + registry_ca_file }}"
+
+        - name: '{{ ansible_name_module }} | check registry cert file'
+          stat:
+            path: "{{ registry_ca_file_path }}"
+          register: registry_ca_file_exist
+
+        - assert:
+            that:
+              - registry_ca_file_exist.stat is defined
+              - registry_ca_file_exist.stat.isreg is defined
+              - registry_ca_file_exist.stat.isreg | bool
+            msg: " the registry_ca_file must be set to a valid pem certificate file path "
+
     - name: Authenticate with the API
       command: >
         {{ openshift_cli }} login \
@@ -57,7 +82,8 @@
           artifactory:
             fqdn: 'updateservice-registry'
             port: ''
-            ca_file_pem: './registry.crt'
+            ca_file_pem: '{{ registry_ca_file_path }}'
+            #ca_file_pem: './registry.crt'
         registry_ca_bundle_cm_name: 'artifactory-registry-ca'
 
     ##### This is being added to fix or workaround what seems to be a bug where OpenShift Cluster does not trust the Ingress CA ####
