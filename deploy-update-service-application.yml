@@ -107,10 +107,23 @@
         - name: Add empty ConfigMap to use as CA injection CM
           command: >
             {{ openshift_cli }} create configmap ingress-ca-bundle -n openshift-config
+          failed_when:
+            - empty_cm_created.rc is defined
+            - empty_cm_created.rc >= 1
+            - empty_cm_created.stderr is defined
+            - " not  'already exists' in empty_cm_created.stderr "
+          register: empty_cm_created
+
 
         - name: Add label to empty ConfigMap created above to use as CA injection CM
           command: >
-            {{ openshift_cli }} label configmap ingress-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config
+            {{ openshift_cli }} label configmap ingress-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config --overwrite=true
+          failed_when:
+            - ca_cm_injection_updated.rc is defined
+            - ca_cm_injection_updated.rc >= 1
+            - ca_cm_injection_updated.stderr is defined
+            - " not 'already has a' in ca_cm_injection_updated.stderr "
+          register: ca_cm_injection_updated
 
   tasks:
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render Update Service Application CR'
