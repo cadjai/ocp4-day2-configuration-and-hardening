@@ -1,0 +1,17 @@
+---
+- name: '{{ ansible_name_module }} | template | Copy registry config to staging location'
+  template:
+    src: "templates/default-repository-icsp.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/default-repository-icsp.yml"
+    force: yes
+  register: default_repo_icsp_conf_copied
+
+- name: '{{ ansible_name_module }} | command | deploy ICSP files'
+  command: >
+    {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/default-repository-icsp.yml
+  when:
+    - default_repo_icsp_conf_copied is defined
+    - default_repo_icsp_conf_copied.dest is defined
+    - default_repo_icsp_conf_copied.dest != ''
+  register: default_repo_icsp_conf_applied
+

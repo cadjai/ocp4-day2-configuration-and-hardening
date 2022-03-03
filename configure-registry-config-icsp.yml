@@ -1,0 +1,65 @@
+- name: ' Configure Keycloak Provider | configure-registry-config-icsp.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Config Unsupported Registries"
+    ansible_name_module: "Configure Registries | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | fix Unsupported Registry Configuration'
+     block:
+       - name: '{{ ansible_name_module }} | assert | Registry hostname is provided'
+         assert:
+           that:
+             - registry_host_fqdn is defined
+             - registry_host_fqdn != ""
+           msg: "The registry FQDN or endpoint is required. If the post is not 443 make you set registry_host_port as well"
+
+       - name: '{{ ansible_name_module }} | set_fact |Fix registry port'
+         set_fact:
+           registry_host_port_fixed: "{{':' + registry_host_port if registry_host_port is defined and registry_host_port | int > 0 else '' }}"
+           registry_local_ocp_repository: "{{'/' + ocp_local_repository if ocp_local_repository is defined and ocp_local_repository != ''  else '' }}"
+           registry_local_operator_repository: "{{'/' + operator_local_repository if operator_local_repository is defined and operator_local_repository != ''  else '' }}"
+
+       - name: '{{ ansible_name_module }} | Update Registry.conf to handle non operator image repos'
+         import_tasks: tasks/process-default-repository-icsp.yml
+
+       - name: '{{ ansible_name_module }} | import_role | import tasks to derive catalog source and ICSP files and repository paths'
+         import_role:
+           name: config-disconnected-olm
+           tasks_from: fetch-operator-catalogs-and-icsp-files.yml
+

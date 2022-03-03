@@ -1,0 +1,33 @@
+apiVersion: operator.openshift.io/v1alpha1
+kind: ImageContentSourcePolicy
+metadata:
+  name: ocp-images
+spec:
+  repositoryDigestMirrors:
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/{{ release_repository }}
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/{{ release_repository }}
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}/openshift4
+    source: registry.redhat.io/openshift4
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}
+    source: quay.io
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}
+    source: docker.io
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}
+    source: registry.redhat.io
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}
+    source: registry.access.redhat.com
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}
+    source: registry.connect.redhat.com
+  - mirrors:
+    - {{ registry_host_fqdn }}{{ registry_host_port_fixed }}{{ registry_local_ocp_repository }}
+    source: gcr.io
