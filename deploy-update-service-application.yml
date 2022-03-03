@@ -194,7 +194,7 @@
 
     - name: '{{ ansible_name_module }} | update cluster service version'
       command: >
-        {{ openshift_cli }} patch clusterversion version --type=merge -p '{"spec": {"upstream": "{{ update_svc_graph_route_retrieved.stdout }}" }}'
+        {{ openshift_cli }} patch clusterversion version --type=merge -p '{"spec": {"upstream": "{{ update_svc_graph_route_retrieved.stdout }}","channel": "{{ current_ocp_release_channel }}" }}'
       when:
         - update_svc_graph is defined
         - update_svc_graph.rc is defined
