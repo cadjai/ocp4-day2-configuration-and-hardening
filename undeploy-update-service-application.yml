@@ -1,0 +1,59 @@
+- name: ' Configure Cluster Update Service  | deploy-update-service-application.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Deploy Cluster Update Service Application"
+    ansible_name_module: "Configure Update Service in disconnected | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get Update Service Application route '
+      shell: >
+        {{ openshift_cli }} get updateservice {{ update_graphdata_application_name }}  --no-headers -n openshift-update-service  | awk '{print $1}'
+      ignore_errors: yes
+      register: update_svc_retrieved
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | Update Service Application CR '
+      command: >
+        {{ openshift_cli }} delete updateservice {{ update_graphdata_application_name }} -n openshift-update-service
+      when:
+        - update_svc_retrieved is defined
+        - update_svc_retrieved.rc is defined
+        - update_svc_retrieved.rc == 0
+        - update_svc_retrieved.stdout is defined
+        - " update_graphdata_application_name in update_svc_retrieved.stdout "
+      register: update_svc_application_deleted
+
