@@ -755,6 +755,30 @@ registry_ca_file: ''
 # end OpenShift Update Service config variables
 ###################################
 
+###################################
+# OpenShift Cluster Autoscaler config variables
+###################################
+cluster_autoscaler_max_nodes_total: '10'
+cluster_autoscaler_cores_min: '72'
+cluster_autoscaler_cores_max: '80'
+cluster_autoscaler_mem_min: '288'
+cluster_autoscaler_mem_max: '304'
+cluster_autoscaler_nvidiagpu_min: '0'
+cluster_autoscaler_nvidiagpu_max: '4'
+cluster_autoscaler_amdgpu_min: '0'
+cluster_autoscaler_amdgpu_max: '4'
+cluster_autoscaler_scale_down_enabled: 'true'
+cluster_autoscaler_scale_down_delayafteradd: '10m'
+cluster_autoscaler_scale_down_delayafterdelete: '5m'
+cluster_autoscaler_scale_down_delayafterfailure: '30s'
+cluster_autoscaler_scale_down_unneededtime: '5m'
+machine_autoscaler_node_role: 'worker'
+machine_autoscaler_replica_min: '1'
+machine_autoscaler_replica_max: '12'
+
+###################################
+# end OpenShift Cluster Autoscaler  config variables
+###################################
 
 #####################################################################################################
 # End of user configurable variables

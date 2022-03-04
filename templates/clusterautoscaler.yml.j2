@@ -1,0 +1,28 @@
+apiVersion: "autoscaling.openshift.io/v1"
+kind: "ClusterAutoscaler"
+metadata:
+  name: "default"
+spec:
+  podPriorityThreshold: -10
+  resourceLimits:
+    maxNodesTotal:  {{ cluster_autoscaler_max_nodes_total | default('24', false) }}
+    cores:
+      min: {{ cluster_autoscaler_cores_min | default('8', false) }}
+      max: {{ cluster_autoscaler_cores_max | default('128', false) }}
+    memory:
+      min: {{ cluster_autoscaler_mem_min | default('4', false) }}
+      max: {{ cluster_autoscaler_mem_max | default('256', false) }}
+    gpus:
+      - type: nvidia.com/gpu
+        min: {{ cluster_autoscaler_nvidiagpu_min | default('0', false) }}
+        max:  {{ cluster_autoscaler_nvidiagpu_max | default('16', false) }}
+      - type: amd.com/gpu
+        min:  {{ cluster_autoscaler_amdgpu_min | default('0', false) }}
+        max: {{ cluster_autoscaler_amdgpu_max | default('4', false) }}
+  scaleDown:
+    enabled: {{ cluster_autoscaler_scale_down_enabled | default('true', false) }}
+    delayAfterAdd: {{ cluster_autoscaler_scale_down_delayafteradd | default('10m', false) }}
+    delayAfterDelete: {{ cluster_autoscaler_scale_down_delayafterdelete | default('5m', false) }}
+    delayAfterFailure: {{ cluster_autoscaler_scale_down_delayafterfailure | default('30s', false) }}
+    unneededTime:  {{ cluster_autoscaler_scale_down_unneededtime | default('5m', false) }}
+

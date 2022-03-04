@@ -1,0 +1,83 @@
+- name: 'Add Infranodes to cluster | configure-autoscaler.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "configure-autoscaler"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve current machineset'
+      shell: >
+        {{ openshift_cli }} get machineset --no-headers -n openshift-machine-api | grep {{ machine_autoscaler_node_role }} | awk '{print $1}'
+      register: machineset_names
+
+    - name: '{{ ansible_name_module }} | template | Copy Autoscaler machineset template to staging location'
+      vars:
+        machineset_name: "{{ item }}"
+      template:
+        src: "templates/machineautoscaler.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item }}-machineautoscaler.yml"
+        force: yes
+      loop: "{{ machineset_names.stdout_lines }}"
+      when:
+        - machineset_names is defined
+        - machineset_names.rc is defined
+        - machineset_names.rc == 0
+        - machineset_names.stdout_lines is defined
+        - machineset_names.stdout_lines | length > 0
+      register: autoscaler_machineset_config_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy machine autoscaler '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item }}-machineautoscaler.yml
+      loop: "{{ machineset_names.stdout_lines }}"
+      when:
+        - machineset_names is defined
+        - machineset_names.rc is defined
+        - machineset_names.rc == 0
+        - machineset_names.stdout_lines is defined
+        - machineset_names.stdout_lines | length > 0
+        - autoscaler_machineset_config_copied is defined
+        - autoscaler_machineset_config_copied.results is defined
+        - autoscaler_machineset_config_copied.results | length > 0
+      register:  autoscaler_machineset_config_deployed
+
+    - name: '{{ ansible_name_module }} | template | Copy Cluster Autoscaler template to staging location'
+      template:
+        src: "templates/clusterautoscaler.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/clusterautoscaler.yml"
+        force: yes
+      register: clusterautoscaler_config_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy cluster autoscaler '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/clusterautoscaler.yml
+      when:
+        - clusterautoscaler_config_copied is defined
+        - clusterautoscaler_config_copied.dest is defined
+        - clusterautoscaler_config_copied.dest != ""
+      register: clusterautoscaler_config_deployed
+
