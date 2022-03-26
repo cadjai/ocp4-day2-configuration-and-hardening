@@ -21,7 +21,7 @@
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} adm taint | taint infra nodes'
   command: >
-    {{ openshift_cli }} adm taint nodes {{ item.stdout }} -l node-role.kubernetes.io/{{ infra_label }} {{ infra_label }}={{ infra_taint_value | default('reserved',false) }}:NoSchedule {{ infra_label }}={{ infra_taint_value | default('reserved', false) }}:NoExecute --overwrite=true
+    {{ openshift_cli }} adm taint nodes {{ item.stdout }} {{ infra_label }}={{ infra_taint_value | default('reserved',false) }}:NoSchedule {{ infra_label }}={{ infra_taint_value | default('reserved', false) }}:NoExecute --overwrite=true
   loop: "{{ infra_node_names.results }}"
  
 - name: '{{ ansible_name_module }} | Move Ingress Controller to Infra nodes'
