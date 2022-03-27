@@ -51,24 +51,17 @@
         ssh -oStrictHostKeyChecking=no -i {{ master_node_ssh_key_file | default('/root/platform/secrets/ssh/id_rsa_kubeadmin', false) }} core@{{ master_names.stdout }} 'cat /etc/containers/registries.conf'
       register: master_reg_conf
 
-    - name: Set registry conf data
-      set_fact:
-        registry_conf_data: "{{ master_reg_conf.stdout_lines | to_json }}"
-      when:
-        - master_reg_conf is defined
-        - master_reg_conf.stdout_lines is defined
-        - master_reg_conf.stdout_lines | length > 0
-
     - name: '{{ ansible_name_module }} | template | Copy unsupported config to staging location'
       vars:
-        registry_conf_data: "{{ registry_conf_loaded.stdout }}"
+        registry_conf_data: "{{ master_reg_conf.stdout }}"
       template:
         src: "templates/unsupported-operators-mc.yml.j2"
         dest: "{{ staging_dir | d('/tmp', true) }}/worker-registry-conf-fix-mc.yml"
         force: yes
       when:
-        - registry_conf_data is defined
-        - registry_conf_data != ''
+        - master_reg_conf is defined
+        - master_reg_conf.stdout is defined 
+        - master_reg_conf.stdout != ''
       register: wrcmc_copied
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy unsupported config '
