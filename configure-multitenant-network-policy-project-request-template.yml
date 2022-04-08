@@ -71,6 +71,13 @@
         - existing_ns_template.rc > 0
       register: ns_template_exported
 
+    - name: '{{ ansible_name_module }} | replace | Update Project Request Template Name'
+      replace:
+        path: "/tmp/{{ namespace_request_template }}-template.yaml"
+        regexp: "name: project-request"
+        replace: "name: {{ namespace_request_template }}"
+      register: ns_template_name_exported
+
     - name: '{{ ansible_name_module }} | Add Markers to mark Managed Field block in Template 1 of 2'
       lineinfile:
         path: "/tmp/{{ namespace_request_template }}-template.yaml"
