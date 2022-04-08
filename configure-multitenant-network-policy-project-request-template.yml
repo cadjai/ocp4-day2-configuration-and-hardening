@@ -1,0 +1,155 @@
+- name: ' Configure Mutitenant Isolation Post Installation | configure-multitenant-network-policy-project-request-template.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Config Multi Tenant Isolation Post Install"
+    ansible_name_module: "Configure Multitenancy | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} get | namespace request template'
+      set_fact:
+        namespace_request_template: "default-multitenant-np-project-request"
+      when:
+        - not namespace_request_template is defined or namespace_request_template == ''
+
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} get | namespace request template'
+      shell: >
+        {{ openshift_cli }} get {{ namespace_request_template }} -n openshift-config
+      ignore_errors: true
+      register: existing_ns_template
+
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} get | namespace request template'
+      shell: >
+        {{ openshift_cli }} get {{ namespace_request_template }} -n openshift-config -o yaml >  /tmp/{{ namespace_request_template }}-template.yaml
+      ignore_errors: true
+      when:
+        - existing_ns_template.rc is defined
+        - existing_ns_template.rc == 0
+        - existing_ns_template.stdout is defined
+        - existing_ns_template.stdout != ''
+      register: existing_ns_template_exported
+
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} adm | create namespace request template'
+      shell: >
+        {{ openshift_cli }} adm create-bootstrap-project-template -o yaml > /tmp/{{ namespace_request_template }}-template.yaml
+      when:
+        - existing_ns_template.rc is defined
+        - existing_ns_template.rc > 0
+      register: ns_template_exported
+
+    - name: '{{ ansible_name_module }} | Add Markers to mark Managed Field block in Template 1 of 2'
+      lineinfile:
+        path: "/tmp/{{ namespace_request_template }}-template.yaml"
+        insertbefore: "parameters:"
+        line: "# BEGIN ANSIBLE MANAGED BLOCK Adding Multitenant Network Policy Block"
+
+    - name: '{{ ansible_name_module }} | Add Markers to mark Managed Field block in Template 2 of 2'
+      lineinfile:
+        path: "/tmp/{{ namespace_request_template }}-template.yaml"
+        insertafter: "# BEGIN ANSIBLE MANAGED BLOCK Adding Multitenant Network Policy Block"
+        line: "# END ANSIBLE MANAGED BLOCK Adding Multitenant Network Policy Block"
+
+    - name: '{{ ansible_name_module }} | Add default MutliTenant Netwrk Policy Block'
+      blockinfile:
+        marker: "# {mark} ANSIBLE MANAGED BLOCK Adding Multitenant Network Policy Block"
+        path: "/tmp/{{ namespace_request_template }}-template.yaml"
+        state: present
+        block: |
+          - apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: allow-from-same-namespace
+            spec:
+              podSelector: {}
+              ingress:
+              - from:
+                - podSelector: {}
+          - apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: allow-from-openshift-ingress
+            spec:
+              ingress:
+              - from:
+                - namespaceSelector:
+                    matchLabels:
+                      network.openshift.io/policy-group: ingress
+              podSelector: {}
+              policyTypes:
+              - Ingress
+          - apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: allow-from-openshift-monitoring
+            spec:
+              ingress:
+              - from:
+                - namespaceSelector:
+                    matchLabels:
+                      network.openshift.io/policy-group: monitoring
+              podSelector: {}
+              policyTypes:
+              - Ingress
+      register: ns_template_updated
+
+    - name: '{{ ansible_name_module }} | Print Updated Template output'
+      debug:
+        var: ns_template_updated
+
+    - name:  '{{ ansible_name_module }} | Create Project Request template'
+      command: >
+        {{ openshift_cli }} apply -f  /tmp/{{ namespace_request_template }}-template.yaml -n openshift-config
+      when:
+        - ns_template_updated is defined
+        - ns_template_updated.changed is defined
+        - ns_template_updated.changed | bool
+        - ns_template_updated.msg is defined
+        - "'Block inserted' in  ns_template_updated.msg"
+      register: ns_template_created
+
+    - name: '{{ ansible_name_module }} | Print Created Template output'
+      debug:
+        var: ns_template_created
+
+    - name: '{{ ansible_name_module }} | Patch the cluster’s project configuration resource'
+      command: >
+        {{ openshift_cli }}  patch project.config.openshift.io/cluster -p '{"spec":{"projectRequestTemplate":{"name":"{{ namespace_request_template }}"}}}' --type=merge
+      when:
+        - ns_template_created is defined
+        - ns_template_created.rc is defined
+        - ns_template_created.rc == 0
+      register: projectreq_template_patched
