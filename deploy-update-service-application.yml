@@ -73,6 +73,19 @@
         - not ocp_cluster_token is defined or ocp_cluster_token == ""
       register: login_out
 
+    - name: '{{ ansible_name_module }} | Ensure required required channel is properly set'
+      block:
+        - name: '{{ ansible_name_module }} | import_tasks | Conditional import of ocp-cluster-login role'
+          command: >
+             {{ openshift_cli }} version -ojson | jq .openshiftVersion
+          register: clusterversion
+
+        - assert:
+             that:
+               - current_ocp_release_channel is defined and current_ocp_release_channel != ""
+               - current_ocp_release_channel is version(clusterversion.stdout, '>')
+             msg: " the current_ocp_release_channel must be set and valid and greater than the current version"
+
     - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create update service CA'
       import_role:
         name: copy-user-ca-bundle-cm-into-new-ca-bundle
