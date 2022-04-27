@@ -49,6 +49,19 @@
       become: yes
       shell: >
         ssh -oStrictHostKeyChecking=no -i {{ master_node_ssh_key_file | default('/root/platform/secrets/ssh/id_rsa_kubeadmin', false) }} core@{{ master_names.stdout }} 'cat /etc/containers/registries.conf'
+      when:
+        - not use_local_config is defined or not use_local_config | bool
+      register: master_reg_conf
+
+    - name: '{{ ansible_name_module }} | get master registry.conf'
+      become: yes
+      shell: >
+        cat {{ local_registry_conf }}
+      when:
+        - use_local_config is defined
+        - use_local_config | bool
+        - local_registry_conf is defined
+        - local_registry_conf != ''
       register: master_reg_conf
 
     - name: '{{ ansible_name_module }} | template | Copy unsupported config to staging location'
@@ -56,7 +69,7 @@
         registry_conf_data: "{{ master_reg_conf.stdout }}"
       template:
         src: "templates/unsupported-operators-mc.yml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/worker-registry-conf-fix-mc.yml"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ node_role | default('worker', false) }}-registry-conf-fix-mc.yml"
         force: yes
       when:
         - master_reg_conf is defined
@@ -66,7 +79,7 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy unsupported config '
       command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/worker-registry-conf-fix-mc.yml
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ node_role | default('worker', false) }}-registry-conf-fix-mc.yml 
       when:
         - wrcmc_copied is defined
       register: wrcmc_deployed

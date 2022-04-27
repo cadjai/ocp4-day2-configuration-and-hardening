@@ -3,8 +3,8 @@ kind: MachineConfig
 metadata:
   annotations:
   labels:
-    machineconfiguration.openshift.io/role: worker
-  name: 99-zworker-container-registry-conf
+    machineconfiguration.openshift.io/role: {{ node_role | default('worker', false) }}
+  name: {{ '99-z' }}{{ node_role | default('worker', false)}}{{ '-container-registry-conf' }} 
 spec:
   config:
     ignition:
