@@ -15,4 +15,7 @@ roles:
   - src: https://github.com/cadjai/copy-user-ca-bundle-cm-into-new-ca-bundle.git 
     scm: git
     name: copy-user-ca-bundle-cm-into-new-ca-bundle 
+  - src: https://github.com/cadjai/add-and-configure-infranodes-to-openshift4-cluster.git 
+    scm: git
+    name: add-and-config-infranodes 
 
