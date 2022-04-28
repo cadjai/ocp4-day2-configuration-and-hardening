@@ -62,7 +62,7 @@
         - use_local_config | bool
         - local_registry_conf is defined
         - local_registry_conf != ''
-      register: master_reg_conf
+      register: local_reg_conf
 
     - name: '{{ ansible_name_module }} | template | Copy unsupported config to staging location'
       vars:
@@ -72,9 +72,7 @@
         dest: "{{ staging_dir | d('/tmp', true) }}/{{ node_role | default('worker', false) }}-registry-conf-fix-mc.yml"
         force: yes
       when:
-        - master_reg_conf is defined
-        - master_reg_conf.stdout is defined 
-        - master_reg_conf.stdout != ''
+        - (master_reg_conf is defined and master_reg_conf.stdout is defined and master_reg_conf.stdout != '') or (local_reg_conf is defined and local_reg_conf.stdout is defined and local_reg_conf.stdout != '' )
       register: wrcmc_copied
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy unsupported config '
