@@ -1,0 +1,19 @@
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: {{ cluster_name }}-apps-backup-location
+  namespace: openshift-adp
+spec:
+  config:
+    region: {{ aws_region }}
+    profile: "default"
+    insecureSkipTLSVerify: "false"
+  credential:
+    key: cloud
+    name: cloud-credentials
+  default: true
+  objectStorage:
+    bucket: {{ oadp_backup_bucket }}
+    prefix: valero
+  provider: aws
+

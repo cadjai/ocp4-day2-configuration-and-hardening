@@ -1,0 +1,220 @@
+- name: ' Configure Cluster Update Service  | deploy-oadp-application-backup.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "deploy-oadp-application-backup"
+    ansible_name_module: " Post Cluster Installation | Configure Cluster application backup Service | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - aws_access_key is defined and aws_access_key != ""
+            msg: " the aws_access_key must be set and valid "
+        - assert:
+            that:
+              - aws_access_secret is defined and aws_access_secret != ""
+            msg: " the aws_access_secret must be set and valid "
+        - assert:
+            that:
+              - aws_region is defined and aws_region != ""
+            msg: " the aws_region must be set and valid "
+
+        - assert:
+            that:
+              - oadp_backup_bucket is defined and oadp_backup_bucket != ''
+            msg: " the oadp_backup_bucket must be set to a valid S3 bucket name  "
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | Ensure required required channel is properly set'
+      block:
+        - name: '{{ ansible_name_module }} | import_tasks | Conditional import of ocp-cluster-login role'
+          command: >
+             {{ openshift_cli }} version -ojson | jq .openshiftVersion
+          register: clusterversion
+
+        - assert:
+             that:
+               - current_ocp_release_channel is defined and current_ocp_release_channel != ""
+               - current_ocp_release_channel is version(clusterversion.stdout, '>')
+             msg: " the current_ocp_release_channel must be set and valid and greater than the current version"
+
+    - name: '{{ ansible_name_module }} | Ensure the OADP operator is installed'
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get  | project openshift_adp'
+          command: >
+             {{ openshift_cli }} get project openshift-adp
+          ignore_errors: yes
+          register: oadp_ns_out
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp IP'
+          shell: >
+            {{ openshift_cli }} get InstallPlan  --no-headers -n openshift-adp | awk '{print $1}'
+          ignore_errors: yes
+          when:
+            - oadp_ns_out.rc is defined
+            - oadp_ns_out.rc == 0
+            - oadp_ns_out.stdout is defined
+            - oadp_ns_out.stdout != ''
+          register: oadp_ip_out
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp IP'
+          shell: >
+            {{ openshift_cli }} get  po -n  openshift-adp --no-headers | awk '{print $1}' | grep openshift-adp-controller                     -manager
+          ignore_errors: yes
+          when:
+            - oadp_ns_out.rc is defined
+            - oadp_ns_out.rc == 0
+            - oadp_ns_out.stdout is defined
+            - oadp_ns_out.stdout != ''
+          register: oadp_controller_out
+
+        - assert:
+             that:
+               - oadp_ip_out.rc is defined and oadp_ip_out.rc == 0
+               - oadp_ip_out.stdout is defined and oadp_ip_out.stdout != ''
+               - oadp_controller_out.rc is defined and oadp_controller_out.rc == 0
+             msg: " the OADP must be installed before running this playbook"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+      command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_infra_id
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+      set_fact:
+        cluster_name: "{{ cluster_infra_id.stdout }}"
+      when:
+        - cluster_infra_id.stdout is defined
+        - cluster_infra_id.stdout != ''
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      #{{ openshift_cli }} get project --no-headers | awk '{print "- "$1}'
+      shell: >
+        {{ openshift_cli }} get project --no-headers | awk '{print $1}'
+      register: namespaces_out
+
+    - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+      set_fact:
+        namespace_list: "{{ namespaces_out.stdout_lines }}"
+      when:
+        - namespaces_out.stdout_lines is defined
+        - namespaces_out.stdout_lines | length > 0
+
+   ### Process CR templates
+    - name: '{{ ansible_name_module }} | template | Render credentials-valero'
+      template:
+        src: "templates/credentials-valero.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-credentials-valero"
+        force: yes
+
+    - name: '{{ ansible_name_module }} | template | Render oadp-dataprotectionapplication CR'
+      template:
+        src: "templates/oadp-dataprotectionapplication-cr.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-dataprotectionapplication-cr.yaml"
+        force: yes
+
+     ### The following are not required to deploy the OADP backup app but if it is failing due to  secret the last can be used to fix it
+    - name: '{{ ansible_name_module }} | template | Render oadp-backupstoragelocation CR'
+      template:
+        src: "templates/oadp-backupstoragelocation-cr.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-backupstoragelocation-cr.yaml"
+        force: yes
+
+    - name: '{{ ansible_name_module }} | template | Render oadp-apps-backup-1-aws-registry-secret'
+      template:
+        src: "templates/oadp-apps-backup-1-aws-registry-secret.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-apps-backup-1-aws-registry-secret.yaml"
+        force: yes
+
+   ### Apply the various CRs
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} create secret | cloud-credentials secret '
+      command: >
+        {{ openshift_cli }} create secret generic cloud-credentials -n openshift-adp --from-file cloud={{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-credentials-valero
+      register: valero_creds_secret_created
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-dataprotectionapplication CR '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-dataprotectionapplication-cr.yaml -n openshift-adp
+      register: oadp_dataprotection_cr_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for the oadp instance to be deployed and configured'
+      wait_for:
+        timeout: 30
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
+      shell: >
+        {{ openshift_cli }} get backupstoragelocations -n openshift-adp --no-headers | awk '{print $1}'
+      register: oadp_storage_backup_location_out
+
+    - name: '{{ ansible_name_module }} | set_fact | oadp_storage_backup_location '
+      set_fact:
+        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+      when:
+        - oadp_storage_backup_location_out.stdout is defined
+        - oadp_storage_backup_location_out.stdout != ''
+
+    - name: '{{ ansible_name_module }} | template | Render oadp-backup CR'
+      template:
+        src: "templates/oadp-backup-cr.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-backup-cr.yaml"
+        force: yes
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-backup CR '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-backup-cr.yaml -n openshift-adp
+      when:
+        - oadp_storage_backup_location_out.stdout is defined
+        - oadp_storage_backup_location_out.stdout != ''
+      register: oadp_backup_cr_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get |  backup CR'
+      shell: >
+        {{ openshift_cli }} get backup -n openshift-adp --no-headers | awk '{print $1}' | grep {{ cluster_name }}-apps-backup
+      register: backup_cr
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get backup CR status '
+      command: >
+        {{ openshift_cli }} get backup backup_cr.stdout -n openshift-adp -o jsonpath='{.status.phase}'
+      when:
+        - backup_cr.rc is defined
+        - backup_cr.rc == 0
+        - backup_cr.stdout is defined
+        - backup_cr.stdout != ''
+      register: backup_cr_status

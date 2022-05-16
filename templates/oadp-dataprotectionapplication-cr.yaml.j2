@@ -1,0 +1,45 @@
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: {{ cluster_name }}-apps-backup
+  namespace: openshift-adp
+spec:
+  configuration:
+    velero:
+      podConfig:
+        resourceAllocations:
+          limits:
+            cpu: "1"
+            memory: 512Mi
+          requests:
+            cpu: 500m
+            memory: 256Mi
+      defaultPlugins:
+        - openshift
+        - aws
+        - csi
+    restic:
+      enable: true
+    featureFlags:
+    - EnableCSI
+  backupLocations:
+    - name: default
+      velero:
+        provider: aws
+        default: true
+        objectStorage:
+          bucket: {{ oadp_backup_bucket }}
+          prefix: valero
+        config:
+          region: {{ aws_region }}
+          profile: "default"
+        credential:
+          key: cloud
+          name: cloud-credentials
+  snapshotLocations:
+    - name: default
+      velero:
+        provider: aws
+        config:
+          region: {{ aws_region }}
+          profile: "default"

@@ -1,0 +1,14 @@
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: {{ cluster_name }}-apps-backup
+  labels:
+    velero.io/storage-location: default
+  namespace: openshift-adp
+spec:
+  hooks: {}
+  includedNamespaces:
+    {{ namespace_list | to_nice_yaml | indent(4, false) }}
+  includeClusterResources: true
+  storageLocation: {{ oadp_storage_backup_location }}
+  ttl: 720h0m0s
