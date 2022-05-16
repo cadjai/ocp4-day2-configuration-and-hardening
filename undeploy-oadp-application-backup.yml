@@ -1,0 +1,57 @@
+- name: ' Configure Cluster Update Service  | undeploy-oadp-application-backup.yml '
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Unistall OADP application backup app"
+    ansible_name_module: "Remove OADP instance | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-backup CR '
+      command: >
+        {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-backup-cr.yaml -n openshift-adp
+      register: oadp_backup_cr_deleted
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-dataprotectionapplication CR '
+      command: >
+        {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-oadp-dataprotectionapplication-cr.yaml -n openshift-adp
+      register: oadp_dataprotection_cr_deleted
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete secret | cloud-credentials secret '
+      command: >
+        {{ openshift_cli }} delete secret cloud-credentials -n openshift-adp
+      register: valero_creds_secret_deleted
+
