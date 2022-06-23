@@ -1,0 +1,65 @@
+- name: ' Configure Kubernetes EventRouter | configure-kubernetes-eventrouter.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Config K8 Event Router"
+    ansible_name_module: "Configure Event Router | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} |  Ensure Namespace exists'
+      command: >
+        {{ openshift_cli }} get namespace openshift-logging
+      ignore_errors: yes
+      register: logging_ns
+
+    - name: '{{ ansible_name_module }} | Deploy Event Router '
+      block:
+        - name: '{{ ansible_name_module }} | shell | Process eventrouter template'
+          shell: >
+            {{ openshift_cli }} process -f {{ eventrouter_template_path | default('templates/event-router.yml', true) }} \
+            -p NAMESPACE=openshift-logging \
+            -p CPU={{ eventrouter_cpu | default('100m', true) }} \
+            -p MEMORY={{ eventrouter_memory | default('128Mi', true) }} \
+            -p IMAGE={{ eventrouter_image_name | default('registry.redhat.io/openshift-logging/eventrouter-rhel8:v0.3', true) }} \
+            -n openshift-logging \
+            | oc apply -f -
+          when:
+            - logging_ns is defined
+            - logging_ns.rc is defined
+            - logging_ns.rc == 0
+          register: eventrouter_created
+
