@@ -69,12 +69,12 @@
             path: "{{ custom_ca_bundle_file }}"
           register: custom_ca_cert_file_exist
 
-        - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create Custom CA'
+        - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm.yml to create Custom CA'
           import_role:
             name: copy-user-ca-bundle-cm-into-new-ca-bundle
-            tasks_from: create-additional-ca-cm-for-registries.yml
+            tasks_from: create-additional-ca-cm.yml
           vars:
-            registries_trust_stores:
+            ca_trust_stores:
               custom-ingress-ca:
                 fqdn: 'ca-bundle.crt'
                 port: ''
@@ -94,7 +94,7 @@
 
         - name: '{{ ansible_name_module }} | config custom CA ingress | check user ca'
           shell: >
-            {{ openshift_cli }} get cm {{ ingress_ca_cm_name | default('user-ca-bundle') }} -n openshift-config -o yaml
+            {{ openshift_cli }} get cm {{ ingress_ca_cm_name | default('user-ca-bundle', true) }} -n openshift-config -o yaml
           ignore_errors: true
           register: ingress_ca_cm_exist
 
@@ -109,9 +109,6 @@
         - ingress_cert_key_file_exist.stat is defined
         - ingress_cert_key_file_exist.stat.isreg is defined
         - ingress_cert_key_file_exist.stat.isreg | bool
-        - ingress_ca_cm_exist is defined
-        - ingress_ca_cm_exist.rc is defined
-        - ingress_ca_cm_exist.rc == 0
       block:
         - name: '{{ ansible_name_module }} | Get Existing ingress custom cert secret'
           command: >
@@ -136,15 +133,41 @@
           command: >
             {{ openshift_cli }} patch ingresscontroller.operator default --type=merge -p  '{"spec":{"defaultCertificate": {"name": "ingress-secret"}}}' -n openshift-ingress-operator
 
+        ### It is assumed that is the add_custom_ca_bundle is defined and set to true and
+        ### ingress_ca_cm_name is defined and set to non empty value and finally
+        ### custom_ca_bundle_file is defined and non emtpy and is a valid file the existing
+        ### trustedCA on the cluster proxy will be overwritten with the custom CA provided by custom_ca_bundle_file
         - name: '{{ ansible_name_module }} | Patch Proxy Config'
           command: >
-            {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name | default('user-ca-bundle') }}"}}}'
+            {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name | default('user-ca-bundle', true) }}"}}}'
+          when:
+            - ingress_cert_file_exist is defined
+            - ingress_cert_file_exist.stat is defined
+            - ingress_cert_file_exist.stat.isreg is defined
+            - ingress_cert_file_exist.stat.isreg | bool
+            - ingress_cert_key_file_exist is defined
+            - ingress_cert_key_file_exist.stat is defined
+
 
         - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
           command: >
-            {{ openshift_cli }} create configmap custom-ca-bundle -n openshift-config
+            {{ openshift_cli }} create configmap "{{ ingress_ca_cm_name }}-bundle" -n openshift-config
+          when:
+            - ingress_cert_file_exist is defined
+            - ingress_cert_file_exist.stat is defined
+            - ingress_cert_file_exist.stat.isreg is defined
+            - ingress_cert_file_exist.stat.isreg | bool
+            - ingress_cert_key_file_exist is defined
+            - ingress_cert_key_file_exist.stat is defined
 
         - name: '{{ ansible_name_module }} | Add label to empty ConfigMap created above to use as CA injection CM'
           command: >
-            {{ openshift_cli }} label configmap custom-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config
+            {{ openshift_cli }} label configmap "{{ ingress_ca_cm_name }}-bundle" config.openshift.io/inject-trusted-cabundle=true -n openshift-config
+          when:
+            - ingress_cert_file_exist is defined
+            - ingress_cert_file_exist.stat is defined
+            - ingress_cert_file_exist.stat.isreg is defined
+            - ingress_cert_file_exist.stat.isreg | bool
+            - ingress_cert_key_file_exist is defined
+            - ingress_cert_key_file_exist.stat is defined
 
