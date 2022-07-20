@@ -19,6 +19,10 @@
         - configure_fileintegrity is defined
         - configure_fileintegrity | bool
       block:
+        - name: '{{ ansible_name_module }} | set_fact | set infra node label'
+          set_fact:
+            infra_label: "{{ infranode.role }}"
+
         - name: '{{ ansible_name_module }} | | get storage class if not provided'
           shell: >
             {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
@@ -38,6 +42,19 @@
             - node_roles.stdout_lines | length > 0
           register: fileintegrity_config_created
 
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render File integrity CR for Infra nodes'
+          template:
+            src: "templates/fileintegrity-cr.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/infra-fileintegrity-cr.yaml"
+            force: yes
+          vars:
+            node_role: "infra"
+            node_role_filename: "infra"
+            apply_infra_tolerations: "true"
+          when:
+            - configure_fileintegrity_on_infra is defined
+            - configure_fileintegrity_on_infra | bool
+
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | FileIntegrity config '
           command: >
             {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item }}-fileintegrity-cr.yaml -n openshift-file-integrity
@@ -47,6 +64,13 @@
             - node_roles.stdout_lines is defined
             - node_roles.stdout_lines | length > 0
           register: fileintegrity_config_applied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | FileIntegrity config for infra nodes'
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/infra-fileintegrity-cr.yaml -n openshift-file-integrity
+          when:
+            - configure_fileintegrity_on_infra is defined
+            - configure_fileintegrity_on_infra | bool
 
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | get Fileintegrity Objects'
           shell: >

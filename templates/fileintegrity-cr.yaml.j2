@@ -6,4 +6,13 @@ metadata:
 spec:
   nodeSelector:
       node-role.kubernetes.io/{{ node_role }}: ""
+{% if configure_fileintegrity_on_infra is defined and configure_fileintegrity_on_infra | bool and apply_infra_tolerations is defined and apply_infra_tolerations | bool %}
+  tolerations:
+  - key: {{ infra_label }}
+    value: {{ infra_taint_value | default('reserved', false) }}
+    effect: NoSchedule
+  - key: {{ infra_label }}
+    value: {{ infra_taint_value | default('reserved', false) }}
+    effect: NoExecute
+{% endif %}
   config: {}
