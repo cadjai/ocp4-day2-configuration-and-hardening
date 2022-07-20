@@ -479,6 +479,17 @@ operators_to_deploy_single_index:
 
 ################## Infra nodes configuration #################################
 infra_taint_value: 'reserved'
+infranode:
+  role: 'infra'
+  type: 'infra'
+  sg: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+  profile: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+  replica_count: 1
+  block_size: 120
+  volume_type: gp2
+  instance_type: 'm5.4xlarge'
+  ami: '{{ aws_rhcos_ami }}'
+
 infranodes:
   infra-az1:
     aws_region: 'us-east-1'
