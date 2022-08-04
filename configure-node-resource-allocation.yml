@@ -1,0 +1,164 @@
+- name: ' Configure ETCD Encryption | configure-node-resource-allocation.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "configure Node resource allocation"
+    ansible_name_module: " Post Cluster Installation | Configure Resource Allocation | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+ 
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Apply node resource allocation Configuration'
+      block:
+        - name: '{{ ansible_name_module }} | get machineconfig pools'
+          shell: >
+            {{ openshift_cli }} get mcp --no-headers | awk '{print $1}' | grep -v ','| sort | uniq
+          register: node_mcps
+
+        - name: '{{ ansible_name_module }} | get exisiting  machineconfig pools labels'
+          shell: >
+            {{ openshift_cli }} get mcp {{ item }}  -o jsonpath='{.metadata.labels}{"\n"}' | grep {{ custom_kubelet_label | default('small-pods', true)}}
+          loop: "{{ node_mcps.stdout_lines }}"
+          when:
+            - node_mcps is defined
+            - node_mcps.rc is defined
+            - node_mcps.rc == 0
+            - node_mcps.stdout_lines is defined
+            - node_mcps.stdout_lines | length > 0
+          ignore_errors: yes
+          register: node_mcp_labels
+
+        - name: '{{ ansible_name_module }} | Print output '
+          debug:
+            var: node_mcp_labels
+
+        - name: '{{ ansible_name_module }} | Print no label found output '
+          debug:
+            var: item
+          loop: "{{ node_mcp_labels.results }}"
+          when:
+            - node_mcp_labels is defined
+            - node_mcp_labels.results is defined
+            - node_mcp_labels.results | length > 0
+            - item.rc is defined
+            - item.rc > 0
+            - item.stdout is defined
+            - item.stdout == ''
+            - item.msg is defined
+            - item.msg != ''
+            - "'non-zero return code' in item.msg"
+
+        - name: '{{ ansible_name_module }} | Print label found output '
+          debug:
+            var: item
+          loop: "{{ node_mcp_labels.results }}"
+          when:
+            - node_mcp_labels is defined
+            - node_mcp_labels.results is defined
+            - node_mcp_labels.results | length > 0
+            - item.rc is defined
+            - item.rc == 0
+            - item.stdout is defined
+            - item.stdout != ''
+            - "'small-pods' in item.stdout"
+
+        - name: '{{ ansible_name_module }} | label node without the custom kubelet label'
+          shell: >
+            {{ openshift_cli }} label mcp {{ item.item }}  custom-kubelet={{ custom_kubelet_label | default('small-pods', true)}}
+          loop: "{{ node_mcp_labels.results }}"
+          when:
+            - node_mcp_labels is defined
+            - node_mcp_labels.results is defined
+            - node_mcp_labels.results | length > 0
+            - item.rc is defined
+            - item.rc > 0
+            - item.stdout is defined
+            - item.stdout == ''
+            - item.msg is defined
+            - item.msg != ''
+          register: node_mcp_label_applied
+
+        - name: '{{ ansible_name_module }} | get exisiting  machineconfig pools labels'
+          shell: >
+            {{ openshift_cli }} get mcp {{ item }}  -o jsonpath='{.metadata.labels}{"\n"}' | grep {{ custom_kubelet_label | default('small-pods', true)}}
+          loop: "{{ node_mcps.stdout_lines }}"
+          when:
+            - node_mcp_label_applied is defined
+            - node_mcp_label_applied.rc is defined
+            - node_mcp_label_applied.rc == 0
+          ignore_errors: yes
+          register: node_mcp_labels
+
+        - name: '{{ ansible_name_module }} | Print output '
+          debug:
+            var: node_mcp_labels
+          when:
+            - node_mcp_labels is defined
+            - node_mcp_labels.results is defined
+            - node_mcp_labels.results | length > 0
+
+        - name: '{{ ansible_name_module }} | check kubelet config for a master 1 of 2'
+          shell: >
+            {{ openshift_cli }} get nodes --selector='node-role.kubernetes.io/master=' --no-headers | awk '{print $1}' | sort | uniq | head -n 1
+          register: master_node
+
+        - name: '{{ ansible_name_module }} | check kubelet config for a master 1 of 2'
+          shell: >
+            {{ openshift_cli }} debug node/{{ master_node.stdout }} -- chroot /host ps -ef | grep kubelet
+          when:
+            - master_node is defined
+            - master_node.rc is defined
+            - master_node.rc == 0
+            - master_node.stdout is defined
+            - master_node.stdout != ''
+          register: master_kubelet_info
+
+        - name: '{{ ansible_name_module }} | Print output '
+          debug:
+            var: master_kubelet_info
+          when:
+            - master_kubelet_info is defined
+
+        - name: '{{ ansible_name_module }} | check kubelet config for a worker'
+          shell: >
+            {{ openshift_cli }} get nodes --selector='node-role.kubernetes.io/worker=' --no-headers | awk '{print $1}' | sort | uniq | head -n 1
+          register: worker_node
+
+        - name: '{{ ansible_name_module }} | check kubelet config for a worker 1 of 2'
+          shell: >
+            {{ openshift_cli }} debug node/{{ worker_node.stdout }} -- chroot /host ps -ef | grep kubelet
+          when:
+            - worker_node is defined
+            - worker_node.rc is defined
+            - worker_node.rc == 0
+            - worker_node.stdout is defined
+            - worker_node.stdout != ''
+          register: worker_kubelet_info
+
+        - name: '{{ ansible_name_module }} | Print output '
+          debug:
+            var: worker_kubelet_info
+          when:
+            - worker_kubelet_info is defined
+
