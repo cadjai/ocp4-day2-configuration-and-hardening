@@ -1,0 +1,13 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: set-allocatable
+spec:
+  autoSizingReserved: true
+  machineConfigPoolSelector:
+    matchLabels:
+      custom-kubelet: {{ custom_kubelet_label | default('small-pods', true) }}
+    kubeletConfig:
+      systemReserved:
+        cpu: {{ node_allocatable_cpu }}
+        memory: {{ node_allocatable_memory }}

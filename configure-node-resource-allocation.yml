@@ -28,6 +28,20 @@
           --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
       register: login_out
 
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      when:
+        - apply_manual_resource_allocation is defined
+        - apply_manual_resource_allocation | bool
+      block:
+        - assert:
+            that:
+              - node_allocatable_cpu is defined and node_allocatable_cpu != ''
+            msg: " the node_allocatable_cpu must be set to a value CPU value in millicore e.g. 1000m  "
+        - assert:
+            that:
+              - node_allocatable_memory is defined and node_allocatable_memory != ''
+            msg: " the node_allocatable_memory must be set to a value Memory value in GiB e.g. 2GiB  "
+
   tasks:
     - name: '{{ ansible_name_module }} | Apply node resource allocation Configuration'
       block:
@@ -118,6 +132,73 @@
             - node_mcp_labels.results is defined
             - node_mcp_labels.results | length > 0
 
+    ### By default the auto/dynamicallocation is set
+    - name: '{{ ansible_name_module }} | Apply dynamic node resource allocation Configuration'
+      when:
+        - not apply_manual_resource_allocation is defined or not apply_manual_resource_allocation | bool
+      block:
+        - name: '{{ ansible_name_module }} | template | Copy dynamic node resource allocation kubelet config to staging location'
+          vars:
+            node_role: "{{ item }}"
+          template:
+            src: "templates/dynamic-node-resource-allocation-kubelet-config.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ item }}-dynamic-node-resource-allocation-kubelet-config.yml"
+            force: yes
+          loop: "{{ node_mcps.stdout_lines }}"
+          when:
+            - node_mcps is defined
+            - node_mcps.rc is defined
+            - node_mcps.rc == 0
+            - node_mcps.stdout_lines is defined
+            - node_mcps.stdout_lines | length > 0
+          register: node_kc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy dynamic node resource allocation kubelet config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item }}-dynamic-node-resource-allocation-kubelet-config.yml
+          loop: "{{ node_mcps.stdout_lines }}"
+          when:
+            - node_mcps is defined
+            - node_mcps.rc is defined
+            - node_mcps.rc == 0
+            - node_mcps.stdout_lines is defined
+            - node_mcps.stdout_lines | length > 0
+            - node_kc_copied is defined
+
+    ### If you need to override the default node resource allocation set the following variables
+    - name: '{{ ansible_name_module }} | Apply manual node resource allocation Configuration'
+      when:
+        - apply_manual_resource_allocation is defined
+        - apply_manual_resource_allocation | bool
+        - node_allocatable_cpu is defined
+        - node_allocatable_cpu != ''
+        - node_allocatable_memory is defined
+        - node_allocatable_memory != ''
+      block:
+        - name: '{{ ansible_name_module }} | template | Copy manual node resource allocation kubelet config to staging location'
+          vars:
+            node_role: "{{ item }}"
+          template:
+            src: "templates/manual-node-resource-allocation-kubelet-config.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/manual-node-resource-allocation-kubelet-config.yml"
+            force: yes
+          when:
+            - (node_mcp_labels is defined and node_mcp_labels.results is defined and node_mcp_labels.results | length > 0) or ( applied_node_mcp_labels is defined and  applied_node_mcp_labels.results is defined and applied_node_mcp_labels.results | length > 0)
+          register: node_kc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy manual node resource allocation kubelet config '
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/manual-node-resource-allocation-kubelet-config.yml
+          when:
+            - (node_mcp_labels is defined and node_mcp_labels.results is defined and node_mcp_labels.results | length > 0) or ( applied_node_mcp_labels is defined and  applied_node_mcp_labels.results is defined and applied_node_mcp_labels.results | length > 0)
+            - node_kc_copied is defined
+
+    ### If you need to get the newly applied node resource allocation set the following variable query_updated_resources to true
+    - name: '{{ ansible_name_module }} | Query applied node resource allocation Configuration'
+      when:
+        - query_updated_resources is defined
+        - query_updated_resources | bool
+      block:
         - name: '{{ ansible_name_module }} | check kubelet config for a master 1 of 2'
           shell: >
             {{ openshift_cli }} get nodes --selector='node-role.kubernetes.io/master=' --no-headers | awk '{print $1}' | sort | uniq | head -n 1
