@@ -30,7 +30,7 @@
           set_fact:
             platform_node_profile_name: "{{ default_profiles.stdout_lines[1] }}"
             platform_profile_name: "{{ default_profiles.stdout_lines[0] }}"
-            compliance_name: "nist-moderate"
+            compliance_profile_name: "nist-moderate"
           when:
             - not platform_node_profile_name is defined or platform_node_profile_name == ''
             - default_profiles is defined
@@ -55,20 +55,67 @@
             {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml -n openshift-compliance
           register: scansetting_applied
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render default ScanSettingBinding CR'
+        - name: '{{ ansible_name_module }} | get moderate profile if platform_node_profile_name not provided'
+          shell: >
+            {{ openshift_cli }} get profiles.compliance.openshift.io -n openshift-compliance --no-headers | grep -i "moderate" | grep -i "rhcos" | awk '{print $1}' | sort
+          register: rhcos_profiles
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render RHCOS ScanSettingBinding CR'
           vars:
-            profile: "{{ item }}"
+            profile: "{{ rhcos_profiles.stdout_lines[0] }}"
+            compliance_name: "{{ 'nist-' + rhcos_profiles.stdout_lines[0] }}"
           template:
             src: "templates/scansettingbinding-cr.yaml.j2"
-            dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ item }}.yaml"
+            dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ rhcos_profiles.stdout_lines[0] }}.yaml"
             force: yes
-          loop: "{{ default_profiles.stdout_lines }}"
+          when:
+            - rhcos_profiles is defined
+            - rhcos_profiles.rc is defined
+            - rhcos_profiles.rc == 0
+            - rhcos_profiles.stdout_lines is defined
+            - rhcos_profiles.stdout_lines | length > 0
+
+        - name: '{{ ansible_name_module }} | get moderate profile if platform_node_profile_name not provided'
+          shell: >
+            {{ openshift_cli }} get profiles.compliance.openshift.io -n openshift-compliance --no-headers | grep -i "moderate" | grep -vi "rhcos" | awk '{print $1}' | sort
+          register: ocp_profiles
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render OCP ScanSettingBinding CR'
+          vars:
+            profiles: "{{ ocp_profiles.stdout_lines }}"
+            compliance_name: "{{ 'nist-' + ocp_profiles.stdout_lines[0] }}"
+          template:
+            src: "templates/scansettingbinding-cr.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ ocp_profiles.stdout_lines[0] }}.yaml"
+            force: yes
+          when:
+            - ocp_profiles is defined
+            - ocp_profiles.rc is defined
+            - ocp_profiles.rc == 0
+            - ocp_profiles.stdout_lines is defined
+            - ocp_profiles.stdout_lines | length > 0
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
           command: >
-            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ item }}.yaml -n openshift-compliance
-          loop: "{{ default_profiles.stdout_lines }}"
-          register: scansetting_applied
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ rhcos_profiles.stdout_lines[0] }}.yaml -n openshift-compliance
+          when:
+            - rhcos_profiles is defined
+            - rhcos_profiles.rc is defined
+            - rhcos_profiles.rc == 0
+            - rhcos_profiles.stdout_lines is defined
+            - rhcos_profiles.stdout_lines | length > 0
+          register: rhcos_scansetting_applied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
+          command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ ocp_profiles.stdout_lines[0] }}.yaml -n openshift-compliance
+          when:
+            - ocp_profiles is defined
+            - ocp_profiles.rc is defined
+            - ocp_profiles.rc == 0
+            - ocp_profiles.stdout_lines is defined
+            - ocp_profiles.stdout_lines | length > 0
+          register: ocp_scansetting_applied
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get automatable findings results'
       shell: >

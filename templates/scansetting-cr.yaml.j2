@@ -1,7 +1,7 @@
 apiVersion: compliance.openshift.io/v1alpha1
 kind: ScanSetting
 metadata:
-  name: "{{ compliance_name | default('cis-compliance') }}-auto-apply" 
+  name: "{{ compliance_profile_name | default('cis-compliance') }}-auto-apply" 
   namespace: openshift-compliance
 autoUpdateRemediations: {{ auto_create_remediation | default('true') }} 
 autoApplyRemediations: {{ auto_apply_remediate | default('true') }} 
