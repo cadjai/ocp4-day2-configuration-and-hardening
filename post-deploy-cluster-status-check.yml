@@ -183,6 +183,80 @@
       failed_when: "cluster_validation_ns_created.rc >=1 and not ' already exists' in cluster_validation_ns_created.stderr"
       register: cluster_validation_ns_created
 
+    - name: '{{ ansible_name_module }} | command | Get cluster Logging status if applicable 1 of 3'
+      shell: >
+        {{ openshift_cli }} get project openshift-logging --no-headers | awk '{print $1}'
+      ignore_errors: yes
+      register: cluster_logging_ns_checked
+
+    - name: '{{ ansible_name_module }} | command | Get cluster Logging status if applicable 2 of 3'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-logging --no-headers | egrep -vi "running|complete" | wc -l
+      when:
+        - cluster_logging_ns_checked.rc is defined
+        - cluster_logging_ns_checked.rc == 0
+        - cluster_logging_ns_checked.stdout is defined
+        - cluster_logging_ns_checked.stdout != ''
+      register: cluster_failing_pods_logging
+
+    - name: '{{ ansible_name_module }} | command | Get cluster Logging status if applicable 3 of 3'
+      shell: >
+        {{ openshift_cli }} get  route kibana -n openshift-logging --no-headers -o jsonpath='{.spec.host}{"\n"}'
+      when:
+        - cluster_failing_pods_logging is defined
+        - cluster_failing_pods_logging.rc is defined
+        - cluster_failing_pods_logging.rc == 0
+        - cluster_failing_pods_logging.stdout is defined
+        - " '0' in cluster_failing_pods_logging.stdout"
+      register: cluster_kibana_route
+
+    - name: '{{ ansible_name_module }} | command | Verify Cluster Kibana Consolo access '
+      shell: >
+        curl -k -o /dev/null  -s -w "%{http_code}\n" "https://{{ cluster_kibana_route.stdout }}"
+      when:
+        - cluster_kibana_route.rc is defined
+        - cluster_kibana_route.rc == 0
+        - cluster_kibana_route.stdout is defined
+        - cluster_kibana_route.stdout != ''
+      register: cluster_kibana_console_url_test
+
+    - name: '{{ ansible_name_module }} | command | Get cluster Monitoring status if applicable 1 of 3'
+      shell: >
+        {{ openshift_cli }} get project openshift-monitoring --no-headers | awk '{print $1}'
+      ignore_errors: yes
+      register: cluster_monitoring_ns_checked
+
+    - name: '{{ ansible_name_module }} | command | Get cluster Monitoring status if applicable 2 of 3'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-monitoring --no-headers | egrep -vi "running|complete" | wc -l
+      when:
+        - cluster_monitoring_ns_checked.rc is defined
+        - cluster_monitoring_ns_checked.rc == 0
+        - cluster_monitoring_ns_checked.stdout is defined
+        - cluster_monitoring_ns_checked.stdout != ''
+      register: cluster_failing_pods_monitoring
+
+    - name: '{{ ansible_name_module }} | command | Get cluster Monitoring status if applicable 3 of 3'
+      shell: >
+        {{ openshift_cli }} get route grafana -n openshift-monitoring --no-headers -o jsonpath='{.spec.host}{"\n"}'
+      when:
+        - cluster_failing_pods_monitoring is defined
+        - cluster_failing_pods_monitoring.rc is defined
+        - cluster_failing_pods_monitoring.rc == 0
+        - cluster_failing_pods_monitoring.stdout is defined
+        - " '0' in cluster_failing_pods_monitoring.stdout"
+      register: cluster_grafana_route
+
+    - name: '{{ ansible_name_module }} | command | Verify Cluster grafana Consolo access '
+      shell: >
+        curl -k -o /dev/null  -s -w "%{http_code}\n" "https://{{ cluster_grafana_route.stdout }}"
+      when:
+        - cluster_grafana_route.rc is defined
+        - cluster_grafana_route.rc == 0
+        - cluster_grafana_route.stdout is defined
+        - cluster_grafana_route.stdout != ''
+      register: cluster_grafana_console_url_test
+
     - name: '{{ ansible_name_module }} | set  Validation Test Application image tag if required '
       set_fact:
         validation_app_image_name_tag: "{{ ':' + validation_app_image_tag if validation_app_image_tag is defined and validation_app_image_tag != '' else '' }}"
@@ -197,7 +271,7 @@
         - validation_app_image != ''
       register: cluster_validation_app_deployed
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 0 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 0 of 26 '
       vars:
         header: |
              "###################################################################################"
@@ -208,7 +282,7 @@
       debug:
         msg: "{{ header.split('\n') }}"
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 1 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 1 of 26 '
       debug:
         var: cluster_operator_statuses
 
@@ -218,7 +292,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 2 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 2 of 26 '
       debug:
         var: cluster_node_statuses
 
@@ -228,7 +302,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 3 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 3 of 26 '
       debug:
         var: cluster_failing_pods_sdn
 
@@ -238,7 +312,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 4 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 4 of 26 '
       debug:
         var: cluster_failing_pods_network
 
@@ -248,7 +322,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 5 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 5 of 26 '
       debug:
         var: cluster_failing_pods_dns
 
@@ -258,7 +332,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 6 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 6 of 26 '
       debug:
         var: cluster_failing_pods_dnsoperator
 
@@ -268,7 +342,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 7 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 7 of 26 '
       debug:
         var: cluster_failing_pods_ingresscanary
 
@@ -278,7 +352,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 8 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 8 of 26 '
       debug:
         var: cluster_route_canary
 
@@ -288,7 +362,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 9 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 9 of 26 '
       debug:
         var: cluster_default_router_ingress
 
@@ -298,7 +372,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 10  of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 10  of 26 '
       debug:
         var: cluster_default_router_ingress_instances
 
@@ -308,7 +382,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 11 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 11 of 26 '
       debug:
         var: cluster_sc
 
@@ -318,7 +392,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 12 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 12 of 26 '
       debug:
         var: cluster_failing_pods_registry
 
@@ -328,7 +402,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 13 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 13 of 26 '
       debug:
         var: cluster_console_url
 
@@ -338,7 +412,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 14 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 14 of 26 '
       debug:
         var: cluster_api_url
 
@@ -348,7 +422,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 15 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 15 of 26 '
       debug:
         var: cluster_console_url_test
 
@@ -358,7 +432,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 16 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 16 of 26 '
       debug:
         var: cluster_console_url_test_output
 
@@ -368,7 +442,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 17 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 17 of 26 '
       debug:
         var: cluster_infra_id
 
@@ -378,7 +452,7 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 18 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 18 of 26 '
       debug:
         var: cluster_validation_ns_created
 
@@ -388,11 +462,107 @@
       debug:
         var: sep_strg
 
-    - name: '{{ ansible_name_module }} | Print Cluster Check Results 19 of 25 '
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 19 of 26 '
       debug:
         var: cluster_validation_app_deployed
       when:
         - cluster_validation_app_deployed is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 20 of 26 '
+      debug:
+        var: cluster_logging_ns_checked
+      when:
+        - cluster_logging_ns_checked is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 21 of 26 '
+      debug:
+        var: cluster_failing_pods_logging
+      when:
+        - cluster_failing_pods_logging is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 22 of 26 '
+      debug:
+        var: cluster_kibana_route
+      when:
+        - cluster_kibana_route is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 23 of 26 '
+      debug:
+        var: cluster_kibana_console_url_test
+      when:
+        - cluster_kibana_console_url_test is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 24 of 26 '
+      debug:
+        var: cluster_monitoring_ns_checked
+      when:
+        - cluster_monitoring_ns_checked is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 25 of 26 '
+      debug:
+        var: cluster_failing_pods_monitoring
+      when:
+        - cluster_failing_pods_monitoring is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 25 of 26 '
+      debug:
+        var: cluster_grafana_route
+      when:
+        - cluster_grafana_route is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 26 of 26 '
+      debug:
+        var: cluster_grafana_console_url_test
+      when:
+        - cluster_grafana_console_url_test is defined
 
     - name: '{{ ansible_name_module }} | Print Cluster separator '
       vars:
