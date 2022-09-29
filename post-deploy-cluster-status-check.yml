@@ -1,0 +1,408 @@
+- name: ' Check Cluster Deployment status | post-deploy-cluster-status-check.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "cluster-status-check"
+    ansible_name_module: " Post Cluster Installation | Check components status | {{ module }}"
+
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command | Get clusteroperators'
+      shell: >
+        {{ openshift_cli }} get co --no-headers | awk '{print $1}'
+      register: cluster_operators
+
+    - name: '{{ ansible_name_module }} | command | Get clusteroperator status'
+      shell: >
+        {{ openshift_cli }} get co {{ item }} -o jsonpath='{.status.conditions[*]}{"\n"}' \
+        | jq ' . | select(.type=="Available") | select(.status=="False")' | wc -l
+      loop: "{{ cluster_operators.stdout_lines }}"
+      when:
+        - cluster_operators.rc is defined
+        - cluster_operators.rc == 0
+        - cluster_operators.stdout_lines is defined
+        - cluster_operators.stdout_lines | length > 0
+      register: cluster_operator_statuses
+
+    - name: '{{ ansible_name_module }} | command | Get cluster nodes'
+      shell: >
+        {{ openshift_cli }} get nodes --no-headers | awk '{print $1}'
+      register: cluster_nodes
+
+    - name: '{{ ansible_name_module }} | command | Get cluster nodes ready status'
+      shell: >
+        {{ openshift_cli }} get node {{ item }}  -o jsonpath='{.status.conditions[*]}{"\n"}' | grep -v Ready | wc -l
+      loop: "{{ cluster_nodes.stdout_lines }}"
+      when:
+        - cluster_nodes.rc is defined
+        - cluster_nodes.rc == 0
+        - cluster_nodes.stdout_lines is defined
+        - cluster_nodes.stdout_lines | length > 0
+      register: cluster_node_statuses
+
+    - name: '{{ ansible_name_module }} | command | Get cluster networking failing pods 1 of 4'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-sdn --no-headers | grep -vi running | wc -l
+      register: cluster_failing_pods_sdn
+
+    - name: '{{ ansible_name_module }} | command | Get cluster networking failing pods 2 of 4'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-network-operator --no-headers | grep -vi running | wc -l
+      register: cluster_failing_pods_network
+
+    - name: '{{ ansible_name_module }} | command | Get cluster networking failing pods 3 of 4'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-dns --no-headers | grep -vi running | wc -l
+      register: cluster_failing_pods_dns
+
+    - name: '{{ ansible_name_module }} | command | Get cluster networking failing pods 4 of 4'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-dns-operator --no-headers | grep -vi running | wc -l
+      register: cluster_failing_pods_dnsoperator
+
+    - name: '{{ ansible_name_module }} | command | Get cluster ingress status 1 of 3'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-ingress-canary --no-headers | grep -vi running | wc -l
+      register: cluster_failing_pods_ingresscanary
+
+    - name: '{{ ansible_name_module }} | command | Get cluster ingress status 2 of 3'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-ingress --no-headers | grep -vi running | wc -l
+      register: cluster_failing_pods_ingress
+
+    - name: '{{ ansible_name_module }} | command | Get cluster ingress status 3 of 3'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-ingress-operator | grep -vi running | wc -l
+      register: cluster_failing_pods_ingressoperator
+
+    - name: '{{ ansible_name_module }} | command | Get cluster canary ingress route'
+      command: >
+        {{ openshift_cli }} get route canary -n openshift-ingress-canary -ojsonpath='{.spec.host}{"\n"}'
+      register: cluster_route_canary
+
+    - name: '{{ ansible_name_module }} | command | Get cluster default ingress load balancer service 1 of 2'
+      command: >
+        {{ openshift_cli }} get svc router-default -n openshift-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+      register: cluster_default_router_ingress
+
+    - name: '{{ ansible_name_module }} | command | Get cluster default ingress load balancer service 2 of 2'
+      shell: >
+        nslookup {{ cluster_default_router_ingress.stdout }}
+      when:
+        - cluster_default_router_ingress.rc is defined
+        - cluster_default_router_ingress.rc == 0
+        - cluster_default_router_ingress.stdout is defined
+        - cluster_default_router_ingress.stdout != ''
+      register: cluster_default_router_ingress_instances
+
+    - name: '{{ ansible_name_module }} | command | Get cluster default storage class status'
+      shell: >
+        {{ openshift_cli }} get sc  --no-headers |  wc -l
+      register: cluster_sc
+
+    - name: '{{ ansible_name_module }} | command | Get cluster image registry failing pods'
+      shell: >
+        {{ openshift_cli }} get pods -n openshift-image-registry --no-headers | egrep -vi "running|complete" | wc -l
+      register: cluster_failing_pods_registry
+
+    - name: '{{ ansible_name_module }} | command | Get cluster web console URL'
+      shell: >
+        {{ openshift_cli }} whoami --show-console
+      register: cluster_console_url
+
+    - name: '{{ ansible_name_module }} | command | Get cluster API URL'
+      shell: >
+        {{ openshift_cli }} whoami --show-server
+      register: cluster_api_url
+
+    - name: '{{ ansible_name_module }} | command | Verify Cluster Web Console access and output 1 of 2'
+      shell: >
+        curl -k -o /dev/null  -s -w "%{http_code}\n" {{ cluster_console_url.stdout }}
+      when:
+        - cluster_console_url.rc is defined
+        - cluster_console_url.rc == 0
+        - cluster_console_url.stdout is defined
+        - cluster_console_url.stdout != ''
+      register: cluster_console_url_test
+
+    - name: '{{ ansible_name_module }} | command | verify Cluster Web Console access and output 2 of 2'
+      shell: >
+        curl -k {{ cluster_console_url.stdout }} | grep openshift
+      when:
+        - cluster_console_url.rc is defined
+        - cluster_console_url.rc == 0
+        - cluster_console_url.stdout is defined
+        - cluster_console_url.stdout != ''
+      register: cluster_console_url_test_output
+
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+      command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_infra_id
+
+    - name: '{{ ansible_name_module }} | Create Test Validation Application Namespace'
+      command: >
+        {{ openshift_cli }} new-project '{{ cluster_infra_id.stdout }}-cluster-validation-project' \
+          --display-name='{{ cluster_infra_id.stdout }}-cluster-validation-project' \
+          --description='{{ cluster_infra_id.stdout }}-cluster-validation-project'
+      failed_when: "cluster_validation_ns_created.rc >=1 and not ' already exists' in cluster_validation_ns_created.stderr"
+      register: cluster_validation_ns_created
+
+    - name: '{{ ansible_name_module }} | set  Validation Test Application image tag if required '
+      set_fact:
+        validation_app_image_name_tag: "{{ ':' + validation_app_image_tag if validation_app_image_tag is defined and validation_app_image_tag != '' else '' }}"
+
+    - name: '{{ ansible_name_module }} | Deploy Validation Test Application Namespace'
+      command: >
+        {{ openshift_cli }} new-app {{ registry_host_fqdn }}/{{ local_repository }}/{{ validation_app_image }}{{ validation_app_image_name_tag }} -n '{{ cluster_infra_id.stdout }}-cluster-validation-project'
+      when:
+        - deploy_test_app is defined
+        - deploy_test_app | bool
+        - validation_app_image is defined
+        - validation_app_image != ''
+      register: cluster_validation_app_deployed
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 0 of 25 '
+      vars:
+        header: |
+             "###################################################################################"
+             "###################################################################################"
+             "######################    Cluster Deployment Status Check Results   ###############"
+             "###################################################################################"
+             "###################################################################################"
+      debug:
+        msg: "{{ header.split('\n') }}"
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 1 of 25 '
+      debug:
+        var: cluster_operator_statuses
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 2 of 25 '
+      debug:
+        var: cluster_node_statuses
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 3 of 25 '
+      debug:
+        var: cluster_failing_pods_sdn
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 4 of 25 '
+      debug:
+        var: cluster_failing_pods_network
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 5 of 25 '
+      debug:
+        var: cluster_failing_pods_dns
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 6 of 25 '
+      debug:
+        var: cluster_failing_pods_dnsoperator
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 7 of 25 '
+      debug:
+        var: cluster_failing_pods_ingresscanary
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 8 of 25 '
+      debug:
+        var: cluster_route_canary
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 9 of 25 '
+      debug:
+        var: cluster_default_router_ingress
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 10  of 25 '
+      debug:
+        var: cluster_default_router_ingress_instances
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 11 of 25 '
+      debug:
+        var: cluster_sc
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 12 of 25 '
+      debug:
+        var: cluster_failing_pods_registry
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 13 of 25 '
+      debug:
+        var: cluster_console_url
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 14 of 25 '
+      debug:
+        var: cluster_api_url
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 15 of 25 '
+      debug:
+        var: cluster_console_url_test
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 16 of 25 '
+      debug:
+        var: cluster_console_url_test_output
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 17 of 25 '
+      debug:
+        var: cluster_infra_id
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 18 of 25 '
+      debug:
+        var: cluster_validation_ns_created
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    - name: '{{ ansible_name_module }} | Print Cluster Check Results 19 of 25 '
+      debug:
+        var: cluster_validation_app_deployed
+      when:
+        - cluster_validation_app_deployed is defined
+
+    - name: '{{ ansible_name_module }} | Print Cluster separator '
+      vars:
+        sep_strg: "\n\n"
+      debug:
+        var: sep_strg
+
+    #- name: '{{ ansible_name_module }} | assert | Validation Check Overall Status'
+    #  assert:
+    #    that:
+    #      - cluster_operator_statuses is defined
+    #    msg: "Some of the cluster components failed to startup clean"
+
