@@ -66,7 +66,7 @@
     - name: '{{ ansible_name_module }} | podman run | extract oc compliance command'
       become: yes
       shell: >
-        podman run --rm --entrypoint /bin/cat {{ scan_results_export_image }} \
+        podman run --authfile {{ registry_auth_config }} --rm --entrypoint /bin/cat {{ scan_results_export_image }} \
           /usr/bin/oc-compliance > {{ scan_results_binary_path }}
       register: scan_results_binary_extracted
 
@@ -79,7 +79,7 @@
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | create export pods'
       shell: >
         {{ scan_results_binary_path }} fetch-raw scansettingbindings \
-          {{ item }} -i {{ scan_results_image }} \
+          {{ item }} -i {{ scan_results_image }}\
             -o  {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }} \
              -n openshift-compliance
       loop: "{{ scansettingbinding_exist.stdout_lines }}"
@@ -134,11 +134,48 @@
             - "not 'lost' in item.path.split('/')[-1]"
           register: scan_arf_bzip_dirs_created
 
-            - name: '{{ ansible_name_module }} | shell:bzcat | Extract bzip2 files '
+        - name: '{{ ansible_name_module }} | shell:bzcat | Extract bzip2 files '
           shell: >
             bzcat {{ item.path }} \
               > {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/bzip/{{ (item.path | dirname).split('/')[-1] }}/{{ (item.path | basename).split('.bzip2')[0] }}
           loop: "{{ scan_arf_bzip_files.files }}"
+          register: scan_arf_unpack_out
+
+        - name: '{{ ansible_name_module }} | file:directory | Ensure the Scan result oscap report directory exist'
+          file:
+            path: "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/report/{{ item.path.split('/')[-1] }}"
+            state: directory
+            mode: 0755
+          loop: "{{ scan_arf_bzip_dirs.files }}"
+          when:
+            - scan_arf_bzip_dirs.files is defined
+            - "not 'lost' in item.path.split('/')[-1]"
+          register: scan_arf_report_dirs_created
+
+        - name: '{{ ansible_name_module }} | command:which | check if oscap-report is installed '
+          command: which oscap
+          ignore_errors: yes
+          failed_when:
+            - oscap_binary_check.rc > 0
+            - "not 'no oscap-report' in oscap_binary_check.stderr"
+          register: oscap_binary_check
+
+        - name: '{{ ansible_name_module }} | find | locate arf files '
+          find:
+            paths: "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/bzip/"
+            recurse: yes
+            patterns: '*.xml'
+          register: scan_arf_files
+
+        - name: '{{ ansible_name_module }} | shell:oscap | Generate oscap report files '
+          shell: >
+            {{ oscap_binary_check.stdout }} xccdf generate report {{ item.path }} \
+              > "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/report/{{ (item.path | dirname).split('/')[-1] }}/{{ (item.path | basename).split('.xml')[0] }}-report.html"
+          loop: "{{ scan_arf_files.files }}"
+          when:
+            - oscap_binary_check is defined
+            - oscap_binary_check.rc is defined
+            - oscap_binary_check.rc == 0
           register: scan_arf_unpack_out
 
     - name: '{{ ansible_name_module }} | command:tar | create an archive of exported results'
@@ -151,4 +188,3 @@
         - raw_scan_results_exported.results is defined
         - raw_scan_results_exported.results | length > 0
       register: scan_results_files_archived
-
