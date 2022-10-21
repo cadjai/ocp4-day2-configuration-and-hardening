@@ -79,7 +79,7 @@
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | create export pods'
       shell: >
         {{ scan_results_binary_path }} fetch-raw scansettingbindings \
-          {{ item }} \
+          {{ item }} -i {{ scan_results_image }} \
             -o  {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }} \
              -n openshift-compliance
       loop: "{{ scansettingbinding_exist.stdout_lines }}"
