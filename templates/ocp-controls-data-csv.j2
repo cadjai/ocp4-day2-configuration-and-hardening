@@ -1,0 +1,4 @@
+RULE_NAME,RULE_ID,RULE_SEVERITY,RULE_STATUS,RULE_DESCRIPTION,RULE_CONTROL_INSTRUCTIONS
+{% for item in unremediated_rule_merged_csv %}
+{{ item }}
+{% endfor %}
