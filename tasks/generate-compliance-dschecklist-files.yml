@@ -1,0 +1,279 @@
+---
+- name: '{{ ansible_name_module }} | Process Checklist'
+  block:
+    - name: '{{ ansible_name_module }} | file:directory | Ensure the Scan result oscap checklist directory exist'
+      file:
+        path: "{{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/checklist"
+        state: directory
+        mode: 0755
+      register: scan_arf_chkl_dirs_created
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 1 of 11'
+      set_fact:
+        compliance_content_pvc_name: "nist-moderate-content"
+      when:
+        - not compliance_content_pvc_name is defined or compliance_content_pvc_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 2 of 11'
+      set_fact:
+        compliance_content_pvc_size: "1Gi"
+      when:
+        - not compliance_content_pvc_size is defined or compliance_content_pvc_size == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 3 of 11'
+      set_fact:
+        compliance_content_pod_name: "ocp4-compliance-content-extract"
+      when:
+        - not compliance_content_pod_name is defined or compliance_content_pod_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 4 of 11'
+      set_fact:
+        compliance_content_container_name: "content-container"
+      when:
+        - not compliance_content_container_name is defined or compliance_content_container_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 5 of 11'
+      set_fact:
+        compliance_content_image_name: "registry.redhat.io/compliance/openshift-compliance-content-rhel8@sha256:35e09797f1021248193d208426210f3a4bb2ac39f511c982119b45f75db530b6"
+      when:
+        - not compliance_content_image_name is defined or compliance_content_image_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 6 of 11'
+      set_fact:
+        compliance_content_extract_container_name: "content-extract-container"
+      when:
+        - not compliance_content_extract_container_name is defined or compliance_content_extract_container_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 7 of 11'
+      set_fact:
+        compliance_content_extract_image_name: "registry.access.redhat.com/ubi8/ubi"
+      when:
+        - not compliance_content_extract_image_name is defined or compliance_content_extract_image_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 8 of 11'
+      set_fact:
+        compliance_content_volume_name: "compliance-content-vol"
+      when:
+        - not compliance_content_volume_name is defined or compliance_content_volume_name == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 9 of 11'
+      set_fact:
+        compliance_content_volume_path: "/ocp4-ds-files"
+      when:
+        - not compliance_content_volume_path is defined or compliance_content_volume_path == ''
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 10 of 11'
+      shell: >
+        {{ openshift_cli }} get storageclass --no-headers | grep -i "{{ storage_class_type | d('kubernetes.io/aws-ebs') }}" | awk '{print $1}'
+      register: default_sc
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction variables 11 of 11'
+      set_fact:
+        storage_class: "{{ default_sc.stdout }}"
+      when:
+        - (not storage_class is defined or storage_class == '') and (default_sc.stdout is defined and default_sc.stdout != '')
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | existing content extraction pods if any'
+      shell: >
+        {{ openshift_cli }} get po --no-headers -n openshift-compliance | grep {{ compliance_content_pod_name }} | awk '{print $1}'
+      register: existing_content_extraction_pod
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | existing content extraction pods if any'
+      command: >
+        {{ openshift_cli }} delete po {{ item }} -n openshift-compliance
+      loop: "{{ existing_content_extraction_pod.stdout_lines }}"
+      when:
+        - existing_content_extraction_pod is defined
+        - existing_content_extraction_pod.stdout_lines is defined
+        - existing_content_extraction_pod.stdout_lines | length > 0
+      register: existing_content_extraction_pod_removed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get scan pvc '
+      shell: >
+        {{ openshift_cli }} get pvc {{ compliance_content_pvc_name }} -n openshift-compliance --no-headers | awk '{print $1}'
+      ignore_errors: yes
+      register: compliance_content_pvc_out
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | existing content extraction pods if any'
+      command: >
+        {{ openshift_cli }} delete pvc {{ compliance_content_pvc_out.stdout }} -n openshift-compliance
+      when:
+        - compliance_content_pvc_out is defined
+        - compliance_content_pvc_out.rc is defined
+        - compliance_content_pvc_out.rc == 0
+        - compliance_content_pvc_out.stdout is defined
+        - compliance_content_pvc_out.stdout != ''
+
+    - name: '{{ ansible_name_module }} | template | Create Compliance result extrat pod definition for each pvc type'
+      template:
+        src: "templates/compliance-content-pod.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/compliance-content-pod.yml"
+        force: yes
+      vars:
+      register: content_pod_definition_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | create Compliance content extrat pod'
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/compliance-content-pod.yml -n openshift-compliance
+      when:
+        - content_pod_definition_copied is defined
+      register: content_pod_definition_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for the pod to be in Running mode'
+      wait_for:
+        timeout: 10
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get |  Compliance content extraction pod'
+      shell: >
+        {{ openshift_cli }}  get po --no-headers -n openshift-compliance | grep  {{ compliance_content_pod_name }} | awk '{print $1}'
+      register: content_extraction_pod
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get  Compliance content extraction pods status '
+      command: >
+        {{ openshift_cli }} get po {{ content_extraction_pod.stdout }} -o jsonpath='{.status.phase}{"\n"}' -n openshift-compliance
+      when:
+        - content_extraction_pod is defined
+        - content_extraction_pod.stdout is defined
+        - content_extraction_pod.stdout != ''
+      register: content_extraction_pod_status
+      until:
+        - content_extraction_pod_status.stdout is defined
+        - content_extraction_pod_status.stdout != ''
+        - " 'Running' in content_extraction_pod_status.stdout"
+      retries: 5
+      delay: 10
+      changed_when: false
+
+    - name:  '{{ ansible_name_module }} | debug | Print  Compliance content extraction pods status '
+      debug:
+        var: content_extraction_pod_status
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get |  Compliance content extraction pods volumes'
+      command: >
+        {{ openshift_cli }}  get po {{  content_extraction_pod.stdout }} -o=jsonpath='{.spec.containers[0].volumeMounts[0].mountPath}{"\n"}' -n openshift-compliance
+      when:
+        - content_extraction_pod_status is defined
+        - content_extraction_pod_status.stdout is defined
+        - content_extraction_pod_status.stdout != ''
+      register: content_extraction_volume
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} cp | extract scan results from pods'
+      command: >
+        {{ openshift_cli }} cp {{ content_extraction_pod.stdout }}:{{ content_extraction_volume.stdout }} {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}/checklist -n openshift-compliance -c {{ compliance_content_extract_container_name }}
+      when:
+        - content_extraction_volume is defined
+        - content_extraction_volume.stdout is defined
+      register: content_extraction_results_exported
+
+    - name:  '{{ ansible_name_module }} | debug | Print  Compliance content DS extraction Output '
+      debug:
+        var: content_extraction_results_exported
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | scan extraction pods '
+      command: >
+        {{ openshift_cli }} delete po {{ content_extraction_pod.stdout }} -n openshift-compliance
+      when:
+        - content_extraction_pod is defined
+        - content_extraction_pod.stdout is defined
+        - content_extraction_pod.stdout != ''
+        - content_extraction_results_exported is defined
+      register: content_extraction_pod_removed
+
+    - name:  '{{ ansible_name_module }} | debug | Print PVC Name Output 1 of 2'
+      debug:
+        var: compliance_content_pvc_out.stdout
+        verbosity: 2
+
+    - name:  '{{ ansible_name_module }} | debug | Print PVC Name Output 2 of 2'
+      debug:
+        var: compliance_content_pvc_name
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | existing content extraction pods if any'
+      command: >
+        {{ openshift_cli }} delete pvc {{ compliance_content_pvc_out.stdout | default(compliance_content_pvc_name, true) }} -n openshift-compliance
+      when:
+        - content_extraction_pod is defined
+        - content_extraction_pod.stdout is defined
+        - content_extraction_pod.stdout != ''
+      register: content_extraction_pvc_removed
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the complaince content extraction DS File Path'
+      set_fact:
+        ocp4_ds_file_path: "{{ dir_scan_result_export}}/{{ scan_export_dir_prefix }}/checklist/ssg-ocp4-ds.xml }}"
+        ocp4_ds_file: "{{ lookup('file',dir_scan_result_export + '/' + scan_export_dir_prefix  + '/checklist/ssg-ocp4-ds.xml') }}"
+      when:
+        - content_extraction_results_exported is defined
+        - content_extraction_results_exported.rc is defined
+        - content_extraction_results_exported.rc == 0
+
+    - name:  '{{ ansible_name_module }} | debug | Print  Compliance content  DS File Path Output '
+      debug:
+        var: ocp4_ds_file_path
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | command:which | check if oscap-report is installed '
+      command: which oscap
+      ignore_errors: yes
+      failed_when:
+        - oscap_binary_check.rc > 0
+        - "not 'no oscap-report' in oscap_binary_check.stderr"
+      register: oscap_binary_check
+
+    - name: '{{ ansible_name_module }} | shell:{{ oscap_binary_check.stdout }} info | retrieve node profile id '
+      shell: >
+         {{ oscap_binary_check.stdout }} info {{ ocp4_ds_file_path }} | grep -A1 "NIST 800-53" | grep "\-node" | awk '{print $2}'
+      register: node_profile_id
+
+    - name:  '{{ ansible_name_module }} | debug | Print node profile id Output '
+      debug:
+        var: node_profile_id
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:{{ oscap_binary_check.stdout }} info | retrieve Platform profile id '
+      shell: >
+         {{ oscap_binary_check.stdout }} info {{ ocp4_ds_file_path }} | grep -A1 "NIST 800-53" | grep -i -A1 "platform" | grep -i id | awk '{print $2}'
+      register: platform_profile_id
+
+    - name:  '{{ ansible_name_module }} | debug | Print  Platform profile id Output '
+      debug:
+        var: platform_profile_id
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:oscap | Generate oscap Node checklist file '
+      shell: >
+        {{ oscap_binary_check.stdout }} xccdf generate guide --profile {{ node_profile_id.stdout }}  {{ ocp4_ds_file_path }} \
+           > {{ ocp4_ds_file_path.split('.xml')[0] }}-guide-checklist-node.html
+      when:
+        - node_profile_id is defined
+        - node_profile_id.rc is defined
+        - node_profile_id.rc != ''
+        - node_profile_id.stdout is defined
+        - node_profile_id.stdout != ''
+      register: node_profile_id_ckl
+
+    - name: '{{ ansible_name_module }} | shell:oscap | Generate oscap Platform checklist file '
+      shell: >
+        {{ oscap_binary_check.stdout }} xccdf generate guide --profile {{ platform_profile_id.stdout }}  {{ ocp4_ds_file_path }} \
+           > {{ ocp4_ds_file_path.split('.xml')[0] }}-guide-checklist-platform.html
+      when:
+        - platform_profile_id is defined
+        - platform_profile_id.rc is defined
+        - platform_profile_id.rc != ''
+        - platform_profile_id.stdout is defined
+        - platform_profile_id.stdout != ''
+      register: platform_profile_id_ckl
+

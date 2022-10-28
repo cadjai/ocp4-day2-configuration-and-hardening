@@ -1,0 +1,45 @@
+kind: List
+metadata: {}
+apiVersion: v1
+items:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: {{ compliance_content_pvc_name | default('nist-moderate-content', true) }}
+      namespace: openshift-compliance
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: {{ compliance_content_pvc_size | default('1Gi', true) }}
+      storageClassName: {{ storage_class | default('gp2', true) }}
+      volumeMode: Filesystem
+
+  -  apiVersion: "v1"
+     kind: Pod
+     metadata:
+       name: {{ compliance_content_pod_name | default('ocp4-compliance-content-extract', true) }}
+       namespace: openshift-compliance
+     spec:
+       initContainers:
+         - name: {{ compliance_content_container_name | default('content-container', true) }}
+           image: {{ compliance_content_image_name | default('registry.redhat.io/compliance/openshift-compliance-content-rhel8@sha256:35e09797f1021248193d208426210f3a4bb2ac39f511c982119b45f75db530b6', true) }}
+           command: ["/bin/sh"]
+           args:
+           - -c
+           - 'cp /ssg-ocp4-ds.xml {{ compliance_content_volume_path | default('/ocp4-ds-files', true) }}/ && cp /ssg-rhcos4-ds.xml {{ compliance_content_volume_path | default('/ocp4-ds-files', true) }}/ && sleep 10'
+           volumeMounts:
+           - mountPath: {{ compliance_content_volume_path | default('/ocp4-ds-files', true) }}
+             name: {{ compliance_content_volume_name | default('compliance-content-vol', true) }}
+       containers:
+         - name: {{ compliance_content_extract_container_name | default('content-extract-pod', true) }}
+           image: {{ compliance_content_extract_image_name | default('registry.access.redhat.com/ubi8/ubi', true) }}
+           command: ["sleep", "3000"]
+           volumeMounts:
+           - mountPath: {{ compliance_content_volume_path | default('/ocp4-ds-files', true) }}
+             name: {{ compliance_content_volume_name | default('compliance-content-vol', true) }}
+       volumes:
+         - name: {{ compliance_content_volume_name | default('compliance-content-vol', true) }}
+           persistentVolumeClaim:
+             claimName: {{ compliance_content_pvc_name | default('nist-moderate-content', true) }}

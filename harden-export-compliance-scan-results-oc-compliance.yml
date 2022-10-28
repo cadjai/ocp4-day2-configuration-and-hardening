@@ -178,6 +178,10 @@
             - oscap_binary_check.rc == 0
           register: scan_arf_unpack_out
 
+        - name: '{{ ansible_name_module }} | import_playboo | Import playbook to generate oscap guide checklist files '
+          include_tasks: tasks/generate-compliance-dschecklist-files.yml 
+
+
     - name: '{{ ansible_name_module }} | command:tar | create an archive of exported results'
       command: >
          tar -czf "{{ dir_scan_result_export }}/scan-results-{{ scan_export_dir_prefix }}.tar.gz" {{ dir_scan_result_export }}/{{ scan_export_dir_prefix }}

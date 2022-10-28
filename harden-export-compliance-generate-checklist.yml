@@ -1,0 +1,24 @@
+- name: ' Konductor | Provision UPI Infra | harden-export-compliance-generate-checklist.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Extract Scan Results Checklist files"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve cluster_name'
+      command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_name
+
+    - name: '{{ ansible_name_module }} | import_playboo | Import playbook to generate oscap guide checklist files '
+      include_tasks: tasks/generate-compliance-dschecklist-files.yml
