@@ -758,6 +758,38 @@ machine_autoscaler_replica_max: '12'
 # end OpenShift Cluster Autoscaler  config variables
 ###################################
 
+#################################
+# GPU  Node Variables
+##################################
+
+gpunode:
+  role: 'gpu'
+  type: 'gpu'
+  sg: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+  profile: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+  replica_count: 1
+  block_size: 120
+  volume_type: gp2
+  instance_type: 'g4dn.xlarge'
+  instance_az: ''
+  ami: '{{ aws_rhcos_ami }}'
+  gpu_count: 1
+  cpu_count: 4
+  mem_size: 16384
+  node_count: 1
+  requester: ''
+  taint_key: ''
+  env: ''
+  is_mig: 'false'
+  mig_strategy: 'single'  ### use one of single or mixed. Given that we are in a shared multi tenant cluster there is no point in using mixed strategy.
+  mig_geoconfig: 'all-1g.5gb'  ### use one of all-1g.5gb, all-2g.10gb, all-3g.20gb, all-7g.40gb, or whatever profiles applies to the GPU type/family being used. The above example apply to A100-40GB
+  mig_custom_strategy_cm: 'custom-mig-parted-config'  ### name of the custom slicing config map profile
+  mig_custom_strategy_config_file: ''  ### fully qualified path to custom slicing profile file to use to create config map
+
+#################################
+# End GPU Node Variables
+##################################
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
