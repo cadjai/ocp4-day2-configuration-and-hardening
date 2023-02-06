@@ -1,0 +1,10 @@
+apiVersion: operator.autoscaling.openshift.io/v1
+kind: ClusterResourceOverride
+metadata:
+  name: cluster
+spec:
+  podResourceOverride:
+    spec:
+      memoryRequestToLimitPercent: {{ memory_request_overcommit_factor | default('50', true) }}
+      cpuRequestToLimitPercent:  {{ cpu_request_overcommit_factor | default('25', true) }}
+      limitCPUToMemoryPercent:  {{ cpu_to_mem_limit_overcommit_factor | default('200', true) }}

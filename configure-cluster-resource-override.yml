@@ -1,0 +1,134 @@
+- name: ' Configure Cluster Resource Over Commit | configure-cluster-resource-override.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "configure-cluster-resource-override"
+    ansible_name_module: "Configure Cluster Resource Override | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | Ensure the clusterresourceoverride operator is installed'
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get  | project clusterresourceoverride-operator'
+          command: >
+             {{ openshift_cli }} get project clusterresourceoverride-operator
+          ignore_errors: yes
+          register: clrtroo_ns_out
+
+        - assert:
+             that:
+               - clrtroo_ns_out.rc is defined and clrtroo_ns_out.rc == 0
+               - clrtroo_ns_out.stdout is defined and clrtroo_ns_out.stdout != ''
+             msg: " the clusterresourceoverride-operator NS must exist and the clusterresourceoverride-operator must be installed before running this playbook"
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | clusterresourceoverride-operator IP 1 of 2'
+          shell: >
+            {{ openshift_cli }} get InstallPlan  --no-headers -n clusterresourceoverride-operator | awk '{print $1}'
+          ignore_errors: yes
+          when:
+            - clrtroo_ns_out.rc is defined
+            - clrtroo_ns_out.rc == 0
+            - clrtroo_ns_out.stdout is defined
+            - clrtroo_ns_out.stdout != ''
+          register: clrtroo_ip_out
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | clusterresourceoverride-operator IP 2 of 2'
+          shell: >
+            {{ openshift_cli }} get  po -n  clusterresourceoverride-operator --no-headers | awk '{print $1}' | grep clusterresourceoverride-operator
+          ignore_errors: yes
+          when:
+            - clrtroo_ns_out.rc is defined
+            - clrtroo_ns_out.rc == 0
+            - clrtroo_ns_out.stdout is defined
+            - clrtroo_ns_out.stdout != ''
+          register: clrtroo_operator_out
+
+        - assert:
+             that:
+               - clrtroo_ip_out.rc is defined and clrtroo_ip_out.rc == 0
+               - clrtroo_ip_out.stdout is defined and clrtroo_ip_out.stdout != ''
+               - clrtroo_operator_out.rc is defined and clrtroo_operator_out.rc == 0
+             msg: " the clusterresourceoverride-operator must be installed before running this playbook"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      when:
+        - (override_all_namespaces is defined and override_all_namespaces | bool) or not resourceoverride_namespace_list is defined or  resourceoverride_namespace_list | d([], true) | length == 0
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+          shell: >
+            {{ openshift_cli }} get project --no-headers | awk '{print $1}'
+          register: namespaces_out
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          set_fact:
+            resourceoverride_namespace_list: "{{ namespaces_out.stdout_lines }}"
+          when:
+            - namespaces_out.stdout_lines is defined
+            - namespaces_out.stdout_lines | length > 0
+
+   ### Process CR templates
+    - name: '{{ ansible_name_module }} | template | Render Cluster Resource Override Instance'
+      template:
+        src: "templates//cluster-resource-override-config.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/cluster-resource-override-config.yaml"
+        force: yes
+      register: clrtroo_cr_created
+
+   ### Apply the various CRs
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | clusterresourceoverride CR '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/cluster-resource-override-config.yaml -n clusterresourceoverride-operator
+      register: clrtroo_cr_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get |  clusterresourceoverride CR '
+      shell: >
+        {{ openshift_cli }} get clusterresourceoverride cluster -n clusterresourceoverride-operator --no-headers | awk '{print $1}'
+      register: clrtroo_cr_out
+
+    ##################### Patch Namespaces if applicable (e.g. add labels) #####################
+    - name:  '{{ ansible_name_module }} | debug | Print {{ resourceoverride_namespace_list }}'
+      debug:
+        var: resourceoverride_namespace_list
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add labels'
+      command: >
+        {{ openshift_cli }} patch namespace {{ item }} --type merge -p '{"metadata":{"labels":{"clusterresourceoverrides.admission.autoscaling.openshift.io/enabled":"true"} }}'
+      loop: "{{ resourceoverride_namespace_list }}"
+      when:
+        - resourceoverride_namespace_list | d([], true) | length > 0
+      register: operator_ns_patched
+
