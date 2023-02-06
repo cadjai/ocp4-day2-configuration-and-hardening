@@ -790,6 +790,36 @@ gpunode:
 # End GPU Node Variables
 ##################################
 
+###################################
+# OADP backup variables
+###################################
+aws_access_key: '{{vault_aws_access_key_id}}'
+aws_access_secret: '{{vault_aws_secret_access_key }}'
+#oadp_backup_bucket: '{{vault_oadp_backup_bucket }}'
+aws_region: '{{ vault_aws_region }}'
+run_oadp_schedule: 'true'
+oadp_cron_schedule_expression: "01 0 * * *"
+backup_all_namespaces: 'true'
+oadp_namespace_list: ''  ### List of namespaces to backup if you don't want to backup all namespaces
+
+###################################
+# End OADP  backup variables
+###################################
+
+###################################
+#  clusterresourceoverride-operator variables
+###################################
+resourceoverride_namespace_list:
+# EXAMPLE
+#resourceoverride_namespace_list:
+#  - claude-test
+#  - helm-repo
+#  - nvidia-gpu-operator
+#  - local-webterminal-test
+###################################
+# End clusterresourceoverride-operator variables
+###################################
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
