@@ -820,6 +820,26 @@ resourceoverride_namespace_list:
 # End clusterresourceoverride-operator variables
 ###################################
 
+###################################
+#  Namespace patching variables
+###################################
+namespaces_to_patch_list:
+# EXAMPLE
+#namespaces_to_patch_list:
+#- name: helm-repo
+#  labels: '{"network.openshift.io/policy-group": "helm-repo"}'
+#  annotations: '{"openshift.io/node-selector": ""}'
+#- name: nvidia-gpu-operator
+#  labels: '{"network.openshift.io/policy-group": "nvidia-gpu-operator"}'
+#  annotations: '{"openshift.io/node-selector": ""}'
+#- name: claude-test
+#  labels: '{"network.openshift.io/policy-group": "claude-test"}'
+#  annotations: '{"openshift.io/node-selector": ""}'
+
+###################################
+# End Namespace patching variables
+###################################
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
