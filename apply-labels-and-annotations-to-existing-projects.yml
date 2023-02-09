@@ -1,0 +1,84 @@
+- name: ' Configure Mutitenant Isolation Post Installation | apply-labels-and-annotations-to-existing-projects.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Config Namespaces Post Install"
+    ansible_name_module: "Apply Labels and Annotations to Existing Projects | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | namespace'
+      shell: >
+         {{ openshift_cli }} get namespace {{ item.name }} --no-headers | awk '{print $1}'
+      ignore_errors: yes
+      loop: "{{ namespaces_to_patch_list }}"
+      when:
+        - namespaces_to_patch_list | d([], true) | length > 0
+        - item.labels != '' or item.name != ''
+      register: ns_list
+
+    - name:  '{{ ansible_name_module }} | debug | Print {{ ns_list }}'
+      debug:
+        var: ns_list.results
+        verbosity: 2
+
+    - name:  '{{ ansible_name_module }} | debug | Print {{ ns_list }} each '
+      debug:
+        var: item
+        verbosity: 2
+      loop: "{{ ns_list.results }}"
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add labels'
+      command: >
+        {{ openshift_cli }} patch namespace {{ item.name }} --type merge -p '{"metadata":{"labels":{{ item.labels }} }}'
+      loop: "{{ ns_list.results }}"
+      when:
+        - namespaces_to_patch_list | d([], true) | length > 0
+        - item.item is defined
+        - item.item.sdtout is defined
+        - item.item.labels != '' or item.item.name != ''
+      register: ns_labels_patched
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add annotations'
+      command: >
+        {{ openshift_cli }} patch namespace {{ item.name }} --type merge -p '{"metadata":{"annotations":{{ item.annotations }} }}'
+      loop: "{{ ns_list.results }}"
+      when:
+        - namespaces_to_patch_list | d([], true) | length > 0
+        - item.item is defined
+        - item.item.sdtout is defined
+        - item.item.annotations != ''
+      register: ns_annotations_patched
