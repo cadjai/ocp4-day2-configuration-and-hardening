@@ -203,17 +203,6 @@
           set_fact:
             shell_prefix: "{{ 'ssh -oStrictHostKeyChecking=no -i ' + node_ssh_key_file + ' core@' }}"
 
-        - name: Print {{ shell_prefix }} output
-          debug:
-            var: shell_prefix
-            verbosity: 2
-
-        - name: Print {{ cluster_nodes.stdout_lines }}  each output
-          debug:
-            var: item.split('ip-')[1]
-            verbosity: 2
-          loop: "{{ cluster_nodes.stdout_lines }}"
-
         - name: '{{ ansible_name_module }} | Build Cron Job command'
           set_fact:
             cron_command_list: "{{ cron_command_list | default([]) + [ openshift_cli + ' --kubeconfig=' + kubeconfig_file + ' debug node/' + item  + ' -- chroot /host /usr/bin/podman system prune -a -f '] }}"
@@ -231,12 +220,12 @@
             var: cron_command_list
             verbosity: 2
 
-        - name: Print Raw Cron Job Commnad output  of 2
+        - name: Print Raw Cron Job Commnad output 2 of 2
           debug:
             var: sh_cron_command_list
             verbosity: 2
 
-        - name: '{{ ansible_name_module }} | Prune podman container storage adhoc with oc'
+        - name: '{{ ansible_name_module }} | Prune podman container storage cron with oc'
           become: yes
           cron:
             name: podman-storage-pruning-for-cluster-{{ cluster_name.stdout }}
@@ -257,7 +246,7 @@
             - cron_command_list | length > 0
           register: storage_prune_oc_cron_created
 
-        - name: '{{ ansible_name_module }} | Prune podman container storage adhoc with ssh'
+        - name: '{{ ansible_name_module }} | Prune podman container storage cron with ssh'
           become: yes
           cron:
             name: podman-storage-pruning-for-cluster-{{ cluster_name.stdout }}

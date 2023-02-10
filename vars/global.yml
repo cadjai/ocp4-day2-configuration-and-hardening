@@ -840,6 +840,41 @@ namespaces_to_patch_list:
 # End Namespace patching variables
 ###################################
 
+###################################
+#  Container garbage collection variables
+###################################
+custom_kubelet_label: 'small-pods'
+soft_evict_mem: '500Mi'
+soft_evict_nodefs_avail: '10%'
+soft_evict_nodefs_inodes: '5%'
+soft_evict_imagefs_avail: '15%'
+soft_evict_imagefs_inodes: '10%'
+soft_evict_gp_mem: '1m30s'
+soft_evict_gp_nodefs_avail: '1m30s'
+soft_evict_gp_nodefs_inodes: '1m30s'
+soft_evict_gp_imagefs_avail: '1m30s'
+soft_evict_gp_imagefs_inodes: '1m30s'
+hard_evict_mem: '200Mi'
+hard_evict_nodefs_avail: '5%'
+hard_evict_nodefs_inodes: '4%'
+hard_evict_imagefs_avail: '10%'
+hard_evict_imagefs_inodes: '5%'
+evict_pressure_tp: '0s'
+image_mingc_age: '5m'
+imagegc_high_treshhold_percent: '80'
+imagegc_low_treshhold_percent: '75'
+prune_podman_storage: 'true'
+setup_storage_prune_cron_job: 'false'
+use_oc: 'true'
+prune_podman_cron_job_runtime_day: '5'
+prune_podman_cron_job_runtime_minute: '16'
+prune_podman_cron_job_runtime_hour: '30'
+node_ssh_key_file: ''
+local_kubeconfig_file: ''
+###################################
+# End Container garbage collection variables
+###################################
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################
