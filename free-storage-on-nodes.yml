@@ -1,0 +1,278 @@
+- name: ' Configure Mutitenant Isolation Post Installation | free-storage-on-nodes.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Reclaim Storage on node Post Install"
+    ansible_name_module: "Garbage Collection and Free container image storage | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Prepare node MCP'
+      block:
+        - name: '{{ ansible_name_module }} | get machineconfig pools'
+          shell: >
+            {{ openshift_cli }} get mcp --no-headers | awk '{print $1}' | grep -v ','| sort | uniq
+          register: node_mcps
+
+        - name: '{{ ansible_name_module }} | get exisiting  machineconfig pools labels'
+          shell: >
+            {{ openshift_cli }} get mcp {{ item }}  -o jsonpath='{.metadata.labels}{"\n"}' | grep {{ custom_kubelet_label | default('small-pods', true)}}
+          loop: "{{ node_mcps.stdout_lines }}"
+          when:
+            - node_mcps is defined
+            - node_mcps.rc is defined
+            - node_mcps.rc == 0
+            - node_mcps.stdout_lines is defined
+            - node_mcps.stdout_lines | length > 0
+          ignore_errors: yes
+          register: node_mcp_labels
+
+        - name: '{{ ansible_name_module }} | label node without the custom kubelet label'
+          shell: >
+            {{ openshift_cli }} label machineconfigpool {{ item.item }}  custom-kubelet={{ custom_kubelet_label | default('small-pods', true)}}
+          loop: "{{ node_mcp_labels.results }}"
+          when:
+            - node_mcp_labels is defined
+            - node_mcp_labels.results is defined
+            - node_mcp_labels.results | length > 0
+            - item.rc is defined
+            - item.rc > 0
+            - item.stdout is defined
+            - item.stdout == ''
+            - item.msg is defined
+            - item.msg != ''
+          register: node_mcp_label_applied
+
+        - name: '{{ ansible_name_module }} | get exisiting  machineconfig pools labels'
+          shell: >
+            {{ openshift_cli }} get mcp {{ item }}  -o jsonpath='{.metadata.labels}{"\n"}' | grep {{ custom_kubelet_label | default('small-pods', true)}}
+          loop: "{{ node_mcps.stdout_lines }}"
+          register: applied_node_mcp_labels
+
+        - name: '{{ ansible_name_module }} | debug | Print {{ applied_node_mcp_labels }}'
+          debug:
+            var: applied_node_mcp_labels.results
+            verbosity: 2
+
+     ### Process CR templates
+    - name: '{{ ansible_name_module }} | template | Render KubeletConfig Instance'
+      vars:
+        node_role: "{{ item.item }}"
+      template:
+        src: "templates/kubelet-config-container-gc.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ item.item }}-kubelet-config-container-gc.yaml"
+        force: yes
+      loop: "{{ applied_node_mcp_labels.results }}"
+      when:
+        - applied_node_mcp_labels is defined
+        - applied_node_mcp_labels.results is defined
+        - applied_node_mcp_labels.results | length > 0
+      register: kubeletconfig_cr_created
+
+   ### Apply the various CRs
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | KubeletConfig CR '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ item.item }}-kubelet-config-container-gc.yaml
+      loop: "{{ applied_node_mcp_labels.results }}"
+      when:
+        - applied_node_mcp_labels is defined
+        - applied_node_mcp_labels.results is defined
+        - applied_node_mcp_labels.results | length > 0
+        - kubeletconfig_cr_created is defined
+      register: kubeletconfig_cr_applied
+
+   ### Prune podman container storage adhoc
+    - name: '{{ ansible_name_module }} | Prune Podman Container Storage '
+      when:
+        - prune_podman_storage is defined
+        - prune_podman_storage | bool
+        - (not setup_storage_prune_cron_job is defined) or (not setup_storage_prune_cron_job | bool)
+      block:
+        - name: '{{ ansible_name_module }} | Retrieve cluster nodes'
+          shell: >
+            {{ openshift_cli }} get nodes --no-headers | awk '{print $1}'
+          register: cluster_nodes
+
+        - name: Print cluster nodes  output
+          debug:
+            var: cluster_nodes
+            verbosity: 2
+          when:
+            - cluster_nodes.rc is defined
+            - cluster_nodes.rc == 0
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+
+        - name: '{{ ansible_name_module }} | Prune podman container storage adhoc with oc'
+          shell: >
+            {{ openshift_cli }} debug node/{{ item }} -- chroot /host /usr/bin/podman system prune -a -f
+          loop: "{{ cluster_nodes.stdout_lines }}"
+          when:
+            - cluster_nodes is defined
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+            - use_oc is defined
+            - use_oc | bool
+          register: storage_pruned
+
+        - name: '{{ ansible_name_module }} | Prune podman container storage adhoc with ssh'
+          become: yes
+          shell: >
+            ssh -oStrictHostKeyChecking=no -i {{ master_node_ssh_key_file | default('/root/platform/secrets/ssh/id_rsa_kubeadmin', false) }} \
+            core@{{ item.split('ip-')[1] | replace('-', '.') }} 'podman system prune -a -f'
+          loop: "{{ cluster_nodes.stdout_lines }}"
+          when:
+            - cluster_nodes is defined
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+            - not use_oc is defined or not use_oc | bool
+          register: storage_pruned
+
+   ### Prune podman container storage on cron schedule
+    - name: '{{ ansible_name_module }} | Prune Podman Container Storage '
+      when:
+        - prune_podman_storage is defined
+        - prune_podman_storage | bool
+        - setup_storage_prune_cron_job is defined
+        - setup_storage_prune_cron_job | bool
+      block:
+        - name: '{{ ansible_name_module }} | {{ openshift_cli }} get cluster name'
+          command: >
+            {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
+          register: cluster_name
+
+        - name: '{{ ansible_name_module }} | Retrieve cluster nodes'
+          shell: >
+            {{ openshift_cli }} get nodes --no-headers | awk '{print $1}'
+          register: cluster_nodes
+
+        - name: Print cluster nodes  output
+          debug:
+            var: cluster_nodes
+            verbosity: 2
+          when:
+            - cluster_nodes.rc is defined
+            - cluster_nodes.rc == 0
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+
+        - name: '{{ ansible_name_module }} | Set node ssh key file path variable'
+          set_fact:
+            node_ssh_key_file: "{{ node_ssh_key_file | default('/root/platform/secrets/ssh/id_rsa_kubeadmin', true) }}"
+            kubeconfig_file: "{{ local_kubeconfig_file | default('/root/platform/secrets/cluster/auth/kubeconfig', true) }}"
+
+        - name: Print {{ node_ssh_key_file }}  output
+          debug:
+            var: node_ssh_key_file
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | set ssh command prefix'
+          set_fact:
+            shell_prefix: "{{ 'ssh -oStrictHostKeyChecking=no -i ' + node_ssh_key_file + ' core@' }}"
+
+        - name: Print {{ shell_prefix }} output
+          debug:
+            var: shell_prefix
+            verbosity: 2
+
+        - name: Print {{ cluster_nodes.stdout_lines }}  each output
+          debug:
+            var: item.split('ip-')[1]
+            verbosity: 2
+          loop: "{{ cluster_nodes.stdout_lines }}"
+
+        - name: '{{ ansible_name_module }} | Build Cron Job command'
+          set_fact:
+            cron_command_list: "{{ cron_command_list | default([]) + [ openshift_cli + ' --kubeconfig=' + kubeconfig_file + ' debug node/' + item  + ' -- chroot /host /usr/bin/podman system prune -a -f '] }}"
+            sh_cron_command_list: "{{ sh_cron_command_list | default([]) + [ shell_prefix + (item.split('ip-')[1] | replace('-', '.'))  + ' -- chroot /host /usr/bin/podman system prune -a -f ' ] }}"
+          loop: "{{ cluster_nodes.stdout_lines }}"
+          when:
+            - cluster_nodes.rc is defined
+            - cluster_nodes.rc == 0
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+          register: cron_command_built
+
+        - name: Print Raw Cron Job Commnad output 1 of 2
+          debug:
+            var: cron_command_list
+            verbosity: 2
+
+        - name: Print Raw Cron Job Commnad output  of 2
+          debug:
+            var: sh_cron_command_list
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | Prune podman container storage adhoc with oc'
+          become: yes
+          cron:
+            name: podman-storage-pruning-for-cluster-{{ cluster_name.stdout }}
+            weekday: "{{ prune_podman_cron_job_runtime_day }}"
+            minute: "{{ prune_podman_cron_job_runtime_minute }}"
+            hour: "{{ prune_podman_cron_job_runtime_hour }}"
+            user: "root"
+            job: "{{ cron_command_list | join('; ') }}"
+            cron_file: podman_storage_pruning_for_cluster_{{ cluster_name.stdout | replace('-', '_') }}
+            state: present
+          when:
+            - cluster_nodes is defined
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+            - use_oc is defined
+            - use_oc | bool
+            - cron_command_list is defined
+            - cron_command_list | length > 0
+          register: storage_prune_oc_cron_created
+
+        - name: '{{ ansible_name_module }} | Prune podman container storage adhoc with ssh'
+          become: yes
+          cron:
+            name: podman-storage-pruning-for-cluster-{{ cluster_name.stdout }}
+            weekday: "{{ prune_podman_cron_job_runtime_day }}"
+            minute: "{{ prune_podman_cron_job_runtime_minute }}"
+            hour: "{{ prune_podman_cron_job_runtime_hour }}"
+            user: "root"
+            job: "{{ sh_cron_command_list | join('; ') }}"
+            cron_file: podman_storage_pruning_for_cluster_{{ cluster_name.stdout | replace('-', '_') }}
+            state: present
+          when:
+            - cluster_nodes is defined
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+            - not use_oc is defined or not use_oc | bool
+            - sh_cron_command_list is defined
+            - sh_cron_command_list | length > 0
+          register: storage_pruned

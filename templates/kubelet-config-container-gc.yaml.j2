@@ -1,0 +1,31 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: {{ node_role | default('worker', true)}}-kubeconfig
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/{{ node_role | default('worker', true)}}: ""
+  kubeletConfig:
+    evictionSoft:
+      memory.available: "{{ soft_evict_mem | default('500Mi', true) }}"
+      nodefs.available: "{{ soft_evict_nodefs_avail | default('10%', true) }}"
+      nodefs.inodesFree: "{{ soft_evict_nodefs_inodes | default('5%', true) }}"
+      imagefs.available: "{{ soft_evict_imagefs_avail | default('15%', true) }}"
+      imagefs.inodesFree: "{{ soft_evict_imagefs_inodes | default('10%', true) }}"
+    evictionSoftGracePeriod:
+      memory.available: "{{ soft_evict_gp_mem | default('1m30s', true) }}"
+      nodefs.available: "{{ soft_evict_gp_nodefs_avail | default('1m30s', true) }}"
+      nodefs.inodesFree: "{{ soft_evict_gp_nodefs_inodes | default('1m30s', true) }}"
+      imagefs.available: "{{ soft_evict_gp_imagefs_avail | default('1m30s', true) }}"
+      imagefs.inodesFree: "{{ soft_evict_gp_imagefs_inodes | default('1m30s', true) }}"
+    evictionHard:
+      memory.available: "{{ hard_evict_mem | default('200Mi', true) }}"
+      nodefs.available: "{{ hard_evict_nodefs_avail | default('5%', true) }}"
+      nodefs.inodesFree: "{{ hard_evict_nodefs_inodes | default('4%', true) }}"
+      imagefs.available: "{{ hard_evict_imagefs_avail | default('10%', true) }}"
+      imagefs.inodesFree: "{{ hard_evict_imagefs_inodes | default('5%', true) }}"
+    evictionPressureTransitionPeriod: {{ evict_pressure_tp | default('0s', true) }}
+    imageMinimumGCAge: {{ image_mingc_age | default('5m', true) }}
+    imageGCHighThresholdPercent: {{ imagegc_high_treshhold_percent | default('80', true) }}
+    imageGCLowThresholdPercent: {{ imagegc_low_treshhold_percent | default('75', true) }}
