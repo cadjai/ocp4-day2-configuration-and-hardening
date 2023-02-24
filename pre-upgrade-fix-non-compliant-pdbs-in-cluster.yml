@@ -1,0 +1,78 @@
+- name: 'Prepare Cluster Upgrade  | pre-upgrade-fix-non-compliant-pdbs-in-cluster.yml '
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Prep Cluster Update"
+    ansible_name_module: "Fix Non Compliant PDB | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | set pdb file location'
+      set_fact:
+        pdb_file: "{{ staging_dir | d('/tmp', true) }}/{{ pdb_file_name | d('pdb_list', true) }}-{{ lookup('pipe', 'date +%Y%m%d') }}.txt"
+      when:
+        - not pdb_file is defined or pdb_file == ''
+
+    - name: '{{ ansible_name_module }} | Retrieve all non compliant PDBs'
+      shell: >
+        {{ openshift_cli }} get pdb -A -o json | jq -r '.items[] | select(.spec.minAvailable >= 1)  | [.metadata.name , .metadata.namespace, .spec.minAvailable] | @csv' \
+               >  {{ pdb_file }}
+      register: pdb_list
+
+    - name: '{{ ansible_name_module }} | Print PDB name'
+      debug:
+        var:  item.spilt(',')[0]
+        verbosity: 2
+      loop: "{{ lookup('file', pdb_file).splitlines() }}"
+
+    - name: '{{ ansible_name_module }} | Print PDB namespace'
+      debug:
+        var:  item.spilt(',')[1]
+        verbosity: 2
+      loop: "{{ lookup('file', pdb_file).splitlines() }}"
+
+    - name: '{{ ansible_name_module }} | Print PDB Min Number'
+      debug:
+        var:  item.spilt(',')[2]
+        verbosity: 2
+      loop: "{{ lookup('file', pdb_file).splitlines() }}"
+
+    - name: '{{ ansible_name_module }} | Patch  all non compliant PDBs'
+      command: >
+        {{ openshift_cli }} patch pdb item.spilt(',')[0] -n item.spilt(',')[1] --type=merge -p '{"spec":{"minAvailable":0}}'
+      loop: "{{ lookup('file', pdb_file).splitlines() }}"
+      register: pdb_patched
+
