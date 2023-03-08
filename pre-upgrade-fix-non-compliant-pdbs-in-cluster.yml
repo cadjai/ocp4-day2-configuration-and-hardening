@@ -46,9 +46,13 @@
       when:
         - not pdb_file is defined or pdb_file == ''
 
+    - name: '{{ ansible_name_module }} | set patched pdb file location'
+      set_fact:
+        patched_pdb_file: "{{ pdb_file.split('.txt')[0] }}-patched.txt"
+
     - name: '{{ ansible_name_module }} | Retrieve all non compliant PDBs'
       shell: >
-        {{ openshift_cli }} get pdb -A -o json | jq -r '.items[] | select(.spec.minAvailable >= 1)  | [.metadata.name , .metadata.namespace, .spec.minAvailable] | @csv' \
+        {{ openshift_cli }} get pdb -A -o json | jq -r '.items[] | select(.spec.minAvailable >= 1)  | [.metadata.name ,  .metadata.namespace, .spec.minAvailable, .spec.maxUnavailable, (.spec.selector.matchLabels | @json )] | @csv' \
                >  {{ pdb_file }}
       register: pdb_list
 
@@ -75,4 +79,43 @@
         {{ openshift_cli }} patch pdb item.spilt(',')[0] -n item.spilt(',')[1] --type=merge -p '{"spec":{"minAvailable":0}}'
       loop: "{{ lookup('file', pdb_file).splitlines() }}"
       register: pdb_patched
+
+       - name: '{{ ansible_name_module }} | Print Patched PDB output'
+      debug:
+        var:  item
+        verbosity: 2
+      loop: "{{ pdb_patched.results }}"
+
+    - name: '{{ ansible_name_module }} | Process unpatched non compliant PDBs'
+      command: >
+        {{ openshift_cli }} delete pdb item.item.split(',')[0] -n item.item.split(',')[1]
+      loop: "{{ pdb_patched.results }}"
+      when:
+        -  item.item is defined
+        -  item.item != ''
+        -  not item.skipped is defined
+        -  item.rc is defined
+        -  item.rc > 0
+        -  item.stderr is defined
+        -  item.stderr != ''
+        - " 'invalid: spec: Forbidden' in item.stderr "
+      register: pdb_deleted
+
+    - name: '{{ ansible_name_module }} | Print deleted PDB output'
+      debug:
+        var:  item
+        verbosity: 2
+      loop: "{{ pdb_deleted.results }}"
+
+    - name: '{{ ansible_name_module }} | Retrieve updated PDBs'
+      shell: >
+        {{ openshift_cli }} get pdb -A -o json | jq -r '.items[] | select(.spec.minAvailable >= 1)  | [.metadata.name , .metadata.namespace, .spec.minAvailable] | @csv' \
+               >  {{ patched_pdb_file }}
+      register: patched_pdb_list
+
+    - name: '{{ ansible_name_module }} | Print retrieved patched PDBs output'
+      debug:
+        var:  item.split(',')[1]
+        verbosity: 2
+      loop: "{{ lookup('file', patched_pdb_file).splitlines() }}"
 
