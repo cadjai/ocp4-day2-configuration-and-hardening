@@ -1,0 +1,153 @@
+- name: 'Prepare Cluster Upgrade  | post-upgrade-fix-non-compliant-pdbs-in-cluster.yml '
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Post Cluster Update"
+    ansible_name_module: "Fix Non Compliant PDB | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | set pdb file location'
+      set_fact:
+        pdb_file: "{{ staging_dir | d('/tmp', true) }}/{{ pdb_file_name | d('pdb_list', true) }}-{{ lookup('pipe', 'date +%Y%m%d') }}.txt"
+      when:
+        - not pdb_file is defined or pdb_file == ''
+
+    - name: '{{ ansible_name_module }} | set patched pdb file location'
+      set_fact:
+        patched_pdb_file: "{{ pdb_file.split('.txt')[0] }}-patched.txt"
+
+    - name: '{{ ansible_name_module }} | load orginal pdb data list'
+      set_fact:
+        pdb_data_list: "{{ pdb_data_list | d([], true)  + [{'name': item.split(',')[0], 'data': item}] }}"
+      loop: "{{ lookup('file', pdb_file).splitlines() }}"
+
+    - name: '{{ ansible_name_module }} | Print original PDB data'
+      debug:
+        var:  item
+        verbosity: 2
+      loop: "{{ pdb_data_list }}"
+
+    - name: '{{ ansible_name_module }} | load updated pdb data list'
+      set_fact:
+        patched_pdb_data_list: "{{ patched_pdb_data_list | d([], true) + [{'name': item.split(',')[0], 'data': item}] }}"
+      loop: "{{ lookup('file', patched_pdb_file).splitlines() }}"
+
+    - name: '{{ ansible_name_module }} | Print patched PDB data'
+      debug:
+        var:  item
+        verbosity: 2
+      loop: "{{ patched_pdb_data_list }}"
+
+    - name: '{{ ansible_name_module }} | load deleted pdb data list'
+      set_fact:
+        deleted_pdb_data_list: "{{ pdb_data_list | difference(patched_pdb_data_list) }}"
+
+    - name: '{{ ansible_name_module }} | Print deleted PDB data'
+      debug:
+        var: deleted_pdb_data_list
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | Print patched PDB original data'
+      debug:
+        var: (pdb_data_list | selectattr('name', 'equalto', item.name) | list | first)
+        verbosity: 2
+      loop: "{{ patched_pdb_data_list }}"
+
+    - name: '{{ ansible_name_module }} | Print patched PDB original minAvalaible'
+      debug:
+        var: (pdb_data_list | selectattr('name', 'equalto', item.name) | list | first).data.split(",")[2]
+        verbosity: 2
+      loop: "{{ patched_pdb_data_list }}"
+
+    - name: '{{ ansible_name_module }} | Restore previously non compiant PDB to original settings '
+      command: >
+        {{ openshift_cli }} patch pdb {{ item.name }} -n {{ item.data.split(',')[1] }} --type=merge -p '{"spec":{"minAvailable":{{ (pdb_data_list | selectattr('name', 'equalto', item.name) | list | first).data.split(",")[2] }} }}'
+      loop: "{{ patched_pdb_data_list }}"
+      when:
+        - restore_original is defined
+        - restore_original | bool
+        - item.name is defined
+        - item.name != ''
+        - (pdb_data_list | selectattr('name', 'equalto', item.name) | list | first) is defined
+      register: pdb_patched
+
+    - name: '{{ ansible_name_module }} | Print Patched PDB output'
+      debug:
+        var:  item
+        verbosity: 2
+      loop: "{{ pdb_patched.results }}"
+
+    - name: '{{ ansible_name_module }} | Restore deleted non compliant PDBs'
+      when:
+        - restore_original is defined
+        - restore_original | bool
+        - deleted_pdb_data_list is defined
+        - deleted_pdb_data_list | length > 0
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | copy PDB configs to location'
+          template:
+            src: "templates/pdb.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ item.name | replace('\"', '')  | replace(\"'\", '') }}-pdb.yml"
+            force: yes
+          loop: "{{ deleted_pdb_data_list }}"
+          vars:
+            pdb_name: "{{ item.name  | replace('\"', '')  | replace(\"'\", '') }}"
+            pdb_namespace: "{{ item.data.split(',')[1]  | replace('\"', '')  | replace(\"'\", '') }}"
+            pdb_min_available: "{{ item.data.split(',')[2]  | replace('\"', '')  | replace(\"'\", '') }}"
+            pdb_max_unavailable: "{{ item.data.split(',')[3]  | replace('\"', '')  | replace(\"'\", '') }}"
+            pdb_selectors: "{{ item.data.split(',')[-1]  | replace('\"', '')  | replace(\"'\", '')  | replace(\"{\", '')  | replace(\"}\", '')  | replace(\":\", ': ')}}"
+          register: pdb_config_copied
+
+        - name: '{{ ansible_name_module }} | Print Copied PDB Config output'
+          debug:
+            var: pdb_config_copied.results
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | copy PDB configs to location'
+          command: >
+            {{ openshift_cli }} apply -f {{ item.dest }}
+          loop: "{{ pdb_config_copied.results }}"
+          when:
+            - pdb_config_copied is defined
+            - pdb_config_copied.results is defined
+            - pdb_config_copied.results | length > 0
+            - item.dest is defined
+            - item.dest != ''
+            - item.failed is defined
+            - not item.failed | bool
+          register: pdb_config_copied
+

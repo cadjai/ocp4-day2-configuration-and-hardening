@@ -1,0 +1,20 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ pdb_name }}
+  namespace: {{ pdb_namespace }}
+spec:
+{% if pdb_min_available is defined and pdb_min_available | int > 0 %}
+  minAvailable: {{ pdb_min_available }}
+{% endif %}
+{% if pdb_max_unavailable is defined and pdb_max_unavailable | int > 0 %}
+  maxUnavailable: {{ pdb_max_unavailable }}
+{% endif %}
+  selector:
+    matchLabels:
+{% if pdb_selectors is defined and pdb_selectors | length > 0 %}
+{% for sel in pdb_selectors.split(',') %}
+      {{ sel }}
+{% endfor %}
+{% endif %}
+
