@@ -1,0 +1,80 @@
+- name: ' Export compliance results to S3 bucket using a cronjob | harden-export-compliance-scan-results-oc-compliance-cronjob.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Extract and Export Scan Results"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | command:which | check if awscli is installed '
+      command: which aws
+      ignore_errors: yes
+      failed_when:
+        - aws_binary_check.rc > 0
+        - "not 'no aws' in aws_binary_check.stderr"
+      register: aws_binary_check
+
+    - name: '{{ ansible_name_module }} | assert | ensure that awscli is installed '
+      assert:
+        that:
+          - aws_binary_check is defined
+          - aws_binary_check.rc is defined
+          - aws_binary_check.rc == 0
+        msg: "The awscli binary is required on the controller to run this cron job"
+
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | get scansettingbindings'
+      shell: >
+        {{ openshift_cli }} get scansettingbinding.compliance.openshift.io --no-headers -n openshift-compliance | awk '{print $1}'
+      ignore_errors: yes
+      register: scansettingbinding_exist
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve cluster_name'
+      command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_name
+
+    - name: '{{ ansible_name_module }} | Create Cron to Upload Compliance results export to S3'
+      when:
+        - setup_compliance_export_cron_job is defined
+        - setup_compliance_export_cron_job | bool
+      block:
+        - name: '{{ ansible_name_module }} | Build Cron Job command'
+          set_fact:
+            cron_command_list: "{{ cron_command_list | default([]) + [  ansible-playbook --ask-vault-pass -vvv harden-export-compliance-scan-results-oc-compliance.yml -e   && aws s3 sync {{ dir_scan_result_export }}/scan-results-{{ scan_export_dir_prefix }}.tar.gz "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/" && rm -rf {{ dir_scan_result_export }}/scan-results-{{ scan_export_dir_prefix }}/*] }}"
+          loop: "{{ cluster_nodes.stdout.split(' ') }}"
+          when:
+            - cluster_nodes.rc is defined
+            - cluster_nodes.rc == 0
+            - cluster_nodes.stdout_lines is defined
+            - cluster_nodes.stdout_lines | length > 0
+          register: cron_command_built
+
+        - name: Print Raw Cron Job Commnad output
+          debug:
+            var: cron_command_list
+
+        - name: '{{ ansible_name_module }} | Create Cron to Upload Compliance results export to S3'
+          become: yes
+          cron:
+            name: compliance-scan-export-for-cluster-{{ cluster_name.stdout }}
+            weekday: "{{ stop_cron_job_runtime_day }}"
+            minute: "{{ stop_cron_job_runtime_minute }}"
+            hour: "{{ stop_cron_job_runtime_hour }}"
+            user: "root"
+            job: "{{ cron_command_list | join('; ') }}"
+            cron_file: shutdown_ocp_instances_for_cluster_{{ cluster_name.stdout | replace('-', '_') }}
+            state: present
+          when:
+            - setup_compliance_export_cron_job | bool
+            - cron_command_list is defined
+            - cron_command_list | length > 0
+          register: ocp_instance_stopped
+
