@@ -1,0 +1,125 @@
+- name: ' Configure Keycloak Provider | configure-mtls-on-default-router.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Configure MTLS for default router"
+    ansible_name_module: "Configure clientCA | {{ module }}"
+
+  pre_tasks:
+    - assert:
+        that:
+          - enable_mtls_on_router is defined and enable_mtls_on_router | bool
+        msg: " the enable_mtls_on_router must be set to true "
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      when:
+        - use_defined_client_ca is defined
+        - use_defined_client_ca | bool
+        - client_ca_cm is defined
+        - client_ca_cm != ''
+      block:
+        - name: '{{ ansible_name_module }} | check cm exist '
+          shell: >
+            {{ openshift_cli }} get cm {{ client_ca_cm }} -n openshift-config --no-headers | awk '{print $1}'
+          ignore_errors: true
+          register: existing_ca_cm_exist
+
+        - assert:
+            that:
+              - existing_ca_cm_exist is defined
+              - existing_ca_cm_exist.rc is defined
+              - existing_ca_cm_exist.rc == 0
+              - existing_ca_cm_exist.stdout is defined
+              - existing_ca_cm_exist.stdout != ''
+              - existing_ca_cm_exist.stdout != ''
+            msg: " the client_ca_cm cm must be defined and be a valid CM in openshift-config namespace "
+
+        - name: '{{ ansible_name_module }} | set_fact | new_ca_cm_name '
+          set_fact:
+            new_ca_cm_name: "{{ client_ca_cm }}"
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      when:
+        - not use_defined_client_ca is defined or not use_defined_client_ca | bool
+      block:
+        - name: '{{ ansible_name_module }} | check cm exist '
+          shell: >
+            {{ openshift_cli }} get cm {{ existing_ca_bundle_cm_name | default('user-ca-bundle', true) }} -n {{ existing_ca_bundle_cm_namespace | default('openshift-config', true) }} --no-headers | awk '{print $1}'
+          ignore_errors: true
+          register: existing_ca_cm_exist
+
+        - assert:
+            that:
+              - existing_ca_cm_exist is defined
+              - existing_ca_cm_exist.rc is defined
+              - existing_ca_cm_exist.rc == 0
+              - existing_ca_cm_exist.stdout is defined
+              - existing_ca_cm_exist.stdout != ''
+              - existing_ca_cm_exist.stdout != ''
+            msg: " the existing_ca_bundle_cm_name or user-ca-bundle cm must be defined and be a valid CM in existing_ca_bundle_cm_namespace or openshift-config namespace "
+
+        - name: '{{ ansible_name_module }} | set_fact | new_ca_cm_key '
+          set_fact:
+            new_ca_cm_key: "ca-bundle.pem"
+          when:
+            - not new_ca_cm_key is defined or new_ca_cm_key == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | new_ca_cm_name '
+          set_fact:
+            new_ca_cm_name: "router-mtls-ca-certs"
+          when:
+            - not new_ca_cm_name is defined or new_ca_cm_name == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | import of mirror-existing-cm-with-key-change.yml to create new CA CM'
+      import_role:
+        name: copy-user-ca-bundle-cm-into-new-ca-bundle
+        tasks_from: mirror-existing-cm-with-key-change.yml 
+      when:
+        - not use_defined_client_ca is defined or not use_defined_client_ca | bool
+
+    - name: '{{ ansible_name_module }} | set_fact | client_ca_policy '
+      set_fact:
+        client_ca_policy: "Optional"
+      when:
+        - not client_ca_policy is defined or client_ca_policy == ''
+
+    - name: '{{ ansible_name_module }} | Patch Default Ingress Controller 1 of 2'
+      command: >
+        {{ openshift_cli }} patch ingresscontroller default --type=merge -p  '{"spec":{"clientTLS":{"clientCA":{"name": "{{ new_ca_cm_name }}"}, "clientCertificatePolicy": "{{ client_ca_policy }}"}}}' -n openshift-ingress-operator
+      register: default_ic_mtls_updated
+
