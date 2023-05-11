@@ -875,6 +875,15 @@ local_kubeconfig_file: ''
 # End Container garbage collection variables
 ###################################
 
+###################################
+#  Platform env variables
+###################################
+custom_ca_file: ''  ### CA for the platform API endpoint (e.g. govcloud API CA)
+###################################
+# End Platform env variables
+###################################
+
+
 #####################################################################################################
 # End of user configurable variables
 #####################################################################################################

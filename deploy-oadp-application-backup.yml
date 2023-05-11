@@ -135,6 +135,40 @@
         dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-credentials-valero"
         force: yes
 
+    - name: '{{ ansible_name_module }} | Load Custom CA if necessary'
+      when:
+        - use_aws_ca is defined
+        -  use_aws_ca | bool
+        - (aws_ca_file is defined and aws_ca_file != '') or (custom_ca_file is defined and custom_ca_file != '')
+      block:
+        - name: '{{ ansible_name_module }} | set aws_ca_file value if necessary '
+          set_fact:
+            aws_ca_file: "{{ custom_ca_file }}"
+          when:
+            - not aws_ca_file is defined or  aws_ca_file == ''
+
+        - name: '{{ ansible_name_module }} | Load Custom CA '
+          set_fact:
+            aws_ca: "{{ lookup('file', aws_ca_file ) }}"
+
+        - name: '{{ ansible_name_module }} | Load Custom CA '
+          shell: >
+             echo '{{ aws_ca }}' | base64 -w0
+          register: aws_ca_b64_strg
+
+        - name: '{{ ansible_name_module }} | Set b64 encoded Custom CA '
+          set_fact:
+            aws_ca_b64: "{{ aws_ca_b64_strg.stdout }}"
+          register: aws_ca_b64_strg
+
+        - name: '{{ ansible_name_module }} | Set b64 encoded Custom CA '
+          set_fact:
+            aws_ca_b64: "{{ aws_ca_b64_strg.stdout }}"
+          when:
+            - aws_ca_b64_strg is defined
+            - aws_ca_b64_strg.stdout is defined
+            - aws_ca_b64_strg.stdout != ''
+
     - name: '{{ ansible_name_module }} | template | Render oadp-dataprotectionapplication CR'
       template:
         src: "templates/oadp-dataprotectionapplication-cr.yaml.j2"

@@ -33,6 +33,10 @@ spec:
         config:
           region: {{ aws_region }}
           profile: "default"
+{% if use_aws_ca is defined and use_aws_ca | bool and aws_ca_b64 is defined and aws_ca_b64 != '' %}
+          cacert: {{ aws_ca_b64 }}
+          insecureSkipTLSVerify: false
+{% endif %}
         credential:
           key: cloud
           name: cloud-credentials
