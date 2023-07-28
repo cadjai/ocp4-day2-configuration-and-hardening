@@ -1,0 +1,75 @@
+- name: ' Konductor | Provision UPI Infra | apply-streaming-connection-timeout-kubelet-config.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Apply Streaming Connection Config via kubelet"
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | get node roles'
+      shell: >
+         {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
+      register: node_roles
+
+    - name: '{{ ansible_name_module }} | template | Render Streaming Connection Timeout KC'
+      vars:
+        node_role: "{{ item }}"
+      template:
+        src: "templates/streaming-connection-timeout-kubelet-config.yaml.y2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/streaming-connection-timeout-kubelet-config-{{ item }}.yaml"
+        force: true
+      loop: "{{ node_roles.stdout_lines }}" 
+      when:
+        - node_roles is defined
+        - node_roles.stdout_lines is defined
+        - node_roles.stdout_lines | length > 0 
+      register: stckc_conf_rendered 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy infra machinesets '
+      command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/streaming-connection-timeout-kubelet-config-{{ item }}.yaml
+      loop: "{{ node_roles.stdout_lines }}" 
+      when:
+        - stckc_conf_rendered is defined
+        - stckc_conf_rendered.changed is defined
+        - stckc_conf_rendered.changed | bool 
+        - stckc_conf_rendered.msg is defined
+        - "'All items completed' in stckc_conf_rendered.msg"
+        - stckc_conf_rendered.results is defined
+        - stckc_conf_rendered.results | length > 0 
+      register: stckc_conf_applied
+
+

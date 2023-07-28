@@ -1,0 +1,11 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: streaming-connection-timeout-kubeletconfig-{{ node_role | default('worker', true)}}
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/{{ node_role | default('worker', true)}}: "" 
+  kubeletConfig:
+    evictionSoft: 
+      streamingConnectionIdleTimeout: "{{ streaming_timeout | default('4h0m0s', true) }}"
