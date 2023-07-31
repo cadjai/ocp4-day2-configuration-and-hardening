@@ -1,0 +1,113 @@
+- name: ' Konductor | Provision UPI Infra | apply-file-integrity-aide-config.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Apply File Integrity Aide Config"
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | assert | Aide Conf configmap name is provided'
+      assert:
+        that:
+          - aide_conf_cm is defined
+          - aide_conf_cm != ""
+        msg: "The AIde conf file config map name must be defined and be a valid config map. "
+
+    - name: '{{ ansible_name_module }} | assert | Aide Conf boolean is provided'
+      assert:
+        that:
+          - configure_fileintegrity_aide is defined
+          - configure_fileintegrity_aide | bool
+        msg: "The configure_fileintegrity_aide boolean must be defined and be set to true. "
+
+  tasks:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | get aide conf cm'
+      shell: >
+        {{ openshift_cli }} get cm {{ aide_conf_cm }} -n openshift-file-integrity | awk '{print $1}'
+      ignore_errors: true
+      register: aideconf_cm
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | get Fileintegrity Objects'
+      shell: >
+         {{ openshift_cli }} get fileintegrities.fileintegrity.openshift.io -n openshift-file-integrity --no-headers | awk '{print $1}'
+      register: fileintegrities
+
+    - name: '{{ ansible_name_module }} | patch existing file integrity configs'
+      shell: >
+         {{ openshift_cli }} patch fileintegrities.fileintegrity.openshift.io {{ item }} -n openshift-file-integrity --type=merge \
+            -p '{"spec":{"config":{"name": "{{ aide_conf_cm }}", "namespace": "openshift-file-integrity"}}}'
+      loop: "{{ fileintegrities.stdout_lines }}"
+      when:
+        - fileintegrities is defined
+        - fileintegrities.stdout_lines is defined
+        - fileintegrities.stdout_lines | length > 0 
+        - item is defined
+        - item != ''
+      register: fileintegrities_patched
+
+    - name: '{{ ansible_name_module }} | reinitialize existing file integrity configs'
+      shell: >
+         {{ openshift_cli }} annotate --overwrite=true fileintegrities.fileintegrity.openshift.io {{ item }} file-integrity.openshift.io/re-init= -n openshift-file-integrity
+      loop: "{{ fileintegrities.stdout_lines }}"
+      when:
+        - reinitiliaze_config is defined
+        - reinitiliaze_config | bool 
+        - fileintegrities is defined
+        - fileintegrities.stdout_lines is defined
+        - fileintegrities.stdout_lines | length > 0 
+        - item is defined
+        - item != ''
+      register: fileintegrities_reinitialized
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | query FileIntegrity status '
+      command: >
+        {{ openshift_cli }} get fileintegrities.fileintegrity.openshift.io {{ item }} -n openshift-file-integrity -o jsonpath="{ .status.phase }"
+      loop: "{{ fileintegrities.stdout_lines }}"
+      when:
+        - fileintegrities is defined
+        - fileintegrities.stdout_lines is defined
+        - fileintegrities.stdout_lines | length > 0 
+      register: fileintegrity_statuses 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | query FileIntegrity status results'
+      shell: >
+         {{ openshift_cli }} get fileintegritynodestatuses.fileintegrity.openshift.io -n openshift-file-integrity -o jsonpath="{ .items[*].results[*].condition }"
+      register: fileintegrity_conditions
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | query FileIntegrity status objects'
+      shell: >
+         {{ openshift_cli }} get fileintegritynodestatuses.fileintegrity.openshift.io -n openshift-file-integrity --no-headers | awk '{print $1}' 
+      register: fileintegrity_node_statuses
+
