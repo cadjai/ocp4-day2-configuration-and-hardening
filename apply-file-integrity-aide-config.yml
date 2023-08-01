@@ -53,6 +53,36 @@
         msg: "The configure_fileintegrity_aide boolean must be defined and be set to true. "
 
   tasks:
+    - name: Add the aide conf ConfigMap if needed
+      when:
+        - add_config_map is defined
+        - add_config_map | bool
+        - aide_conf_file is defined
+        - aide_conf_file != ''
+      block:
+        - name: '{{ ansible_name_module }} | stat | Check if aide conf file exist'
+          ansible.builtin.stat:
+            path: "{{ aide_conf_file }}"
+            get_checksum: false
+          register: aideconf_file_exist
+
+        - name: Add Aide conf ConfigMap
+          command: >
+            {{ openshift_cli }} create configmap  {{ aide_conf_cm }} --from-file={{ aide_conf_file }} -n openshift-file-integrity
+          when:
+            - aideconf_file_exist is defined
+            - aideconf_file_exist.stat is defined
+            - aideconf_file_exist.stat.exists is defined
+            - aideconf_file_exist.stat.exists | bool
+            - aideconf_file_exist.stat.path is defined
+            - " aide_conf_file in aideconf_file_exist.stat.path"
+          failed_when:
+            - aide_conf_cm_created.rc is defined
+            - aide_conf_cm_created.rc >= 1
+            - aide_conf_cm_created.stderr is defined
+            - " not  'already exists' in aide_conf_cm_created.stderr "
+          register: aide_conf_cm_created
+
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | get aide conf cm'
       shell: >
         {{ openshift_cli }} get cm {{ aide_conf_cm }} -n openshift-file-integrity | awk '{print $1}'
