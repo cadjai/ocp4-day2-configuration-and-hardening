@@ -1,0 +1,91 @@
+apiVersion: org.eclipse.che/v2
+kind: CheCluster
+metadata:
+  annotations:
+    che.eclipse.org/checluster-defaults-cleanup: '{"containers.resources":"true","spec.components.dashboard.headerMessage":"true","spec.components.pluginRegistry.openVSXURL":"true","spec.devEnvironments.defaultComponents":"true","spec.devEnvironments.defaultEditor":"true","spec.devEnvironments.disableContainerBuildCapabilities":"true"}'
+  name: devspaces
+  namespace: openshift-devspaces
+spec:
+  components:
+    cheServer:
+      debug: false
+      extraProperties:
+        CHE_INFRA_KUBERNETES_PVC_STORAGE__CLASS__NAME: ""
+{% if set_node_selector is defined and set_node_selector | bool %}
+        CHE_WORKSPACE_POD_NODE__SELECTOR: {{ devspaces_nodeselector }} 
+{% endif %}
+{% if set_logger_config is defined and set_logger_config | bool %}
+## comma separated list of key-value pairs
+## e.g. CHE_LOGGER_CONFIG: "org.eclipse.che.api.workspace.server.WorkspaceManager=DEBUG"
+## e.g. CHE_LOGGER_CONFIG: "che.infra.request-logging=TRACE"
+        CHE_LOGGER_CONFIG: {{ devspaces_logger_config }} 
+{% endif %}
+      logLevel: INFO
+    dashboard:
+      deployment: {}
+    database:
+      credentialsSecretName: {{ devspaces_db_secret | default('postgres-credentials', true) }}
+      externalDb: {{ devspaces_use_external_db | default('false', true) }}
+      postgresDb: {{ devspaces_db_name | default('dbche', true) }}
+      postgresHostName: {{ devspaces_db_hostname | default('postgres', true) }}
+      postgresPort: "{{ devspaces_db_port | default('5432', true) }}"
+      pvc:
+        claimSize: {{ devspaces_db_pvc_size | default('1Gi', true) }}
+    devWorkspace:
+      runningLimit: "{{ devspaces_workspace_running_limit | default('2', true) }}"
+    devfileRegistry:
+      deployment: {}
+    imagePuller:
+      enable: false
+      spec: {}
+    metrics:
+      enable: true
+    pluginRegistry: {}
+  containerRegistry: {}
+  devEnvironments:
+    defaultNamespace:
+      autoProvision: {{ devspaces_auto_namespace | default('true', true) }}
+      template: {{ devspaces_namespace_template | default('<username>-devspaces', true) }}
+    disableContainerBuildCapabilities: true
+    maxNumberOfRunningWorkspacesPerUser: {{ devspaces_max_running_workspace_per_user | default('2', true) }}
+    maxNumberOfWorkspacesPerUser: {{ devspaces_max_workspace_per_user | default('2', true) }}
+{% if set_node_selector is defined and set_node_selector | bool %}
+    nodeSelector:
+      {{ devspaces_nodeselector_label }}: {{ devspaces_nodeselector_value | default("", true) }}
+{% endif %}
+    secondsOfInactivityBeforeIdling: 1800
+    secondsOfRunBeforeIdling: -1
+    startTimeoutSeconds: 300
+    storage:
+      pvcStrategy: {{ devspaces_pvc_strategy | default('per-user', true) }}
+{% if set_tolerations is defined and set_tolerations | bool %}
+    tolerations:
+    - effect: NoSchedule
+      key: {{ devspaces_taint_label }}
+      value: {{ devspaces_taint_value }}
+    - effect: NoExecute
+      key: {{ devspaces_taint_label }}
+      value: {{ devspaces_taint_value }}
+{% endif %}
+{% if add_config_map is defined and add_config_map | bool %}
+    trustedCerts:
+      gitTrustedCertsConfigMapName: {{ git_cert_cm }} 
+{% endif %}
+{% if set_git_services is defined and set_git_services | bool %}
+  gitServices:
+    gitlab:
+    - endpoint: {{ githost_fqdn_http_endpoint }} 
+      secretName: {{ git_oauth_secret_name }} 
+{% else %}
+  gitServices: {}
+{% endif %}
+  networking:
+    auth:
+      gateway:
+        configLabels:
+          app: che
+          component: che-gateway-config
+{% if set_checluster_hostname is defined and set_checluster_hostname | bool %}
+    hostname: {{ checluster_hostname }}
+    tlsSecretName: {{ checluster_secret_name }}
+{% endif %}

@@ -1,0 +1,482 @@
+- name: ' Konductor | Provision UPI Infra | configure-checluster.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Apply Additional configuration to DevSpace Checluster Config"
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get devspace subscription cr'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get sub -A --no-headers | grep devspaces | awk '{print $2}' 
+      ignore_errors: true
+      register: devspaces_sub_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get devspace subscription cr namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get sub -A --no-headers | grep devspaces | awk '{print $1}' 
+      ignore_errors: true
+      register: devspaces_sub_ns
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get devspace namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project openshift-devspaces --no-headers | awk '{print $1}' 
+      ignore_errors: true
+      register: devspaces_ns
+
+    - name: '{{ ansible_name_module }} | assert | Devspace is properly installed'
+      ansible.builtin.assert:
+        that:
+          - devspaces_sub_exists is defined
+          - devspaces_sub_exists.rc is defined
+          - devspaces_sub_exists.rc == 0 
+          - devspaces_sub_exists.stdout is defined
+          - "'devspaces' in devspaces_sub_exists.stdout" 
+        msg: "The DevSpaces operator is required before running this"
+
+    - name: '{{ ansible_name_module }} | assert | Devspace is installed in proper namespace'
+      ansible.builtin.assert:
+        that:
+          - devspaces_sub_ns is defined
+          - devspaces_sub_ns.rc is defined
+          - devspaces_sub_ns.rc == 0 
+          - devspaces_sub_ns.stdout is defined
+          - "not 'devspaces' in devspaces_sub_ns.stdout" 
+        msg: "The DevSpaces operator is expected to be in the openshift-devspaces namespace"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | get checluster CR'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get checluster devspaces -n openshift-devspaces --no-headers | awk '{print $1}'
+      ignore_errors: true
+      register: checluster_cr 
+
+    - name: '{{ ansible_name_module }} | assert | There is no existing CheCluster CR in the cluster'
+      ansible.builtin.assert:
+        that:
+          - checluster_cr is defined
+          - checluster_cr.rc is defined
+          - checluster_cr.rc == 0 
+          - checluster_cr.stdout is defined
+          - checluster_cr.stdout == '' 
+        msg: "The CheCluster resource cannot be pre-existing in the cluster. If there is one it needs to be removed. This is to configure a pristine DevSpaces"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Create CheCluster config Namespace'
+      ansible.builtin.command: >
+        {{ openshift_cli }} new-project openshift-devspaces \
+          --display-name='openshift-devspaces' \
+          --description='Devspaces global Configuration'
+      when: 
+        - devspaces_ns is defined
+        - devspaces_ns.rc is defined
+        - devspaces_ns.rc != 0 
+        - devspaces_ns.stderr is defined
+        - devspaces_ns.stderr != ''
+
+    - name: '{{ ansible_name_module }} | Add the git repo ConfigMap if needed'
+      when:
+        - add_config_map is defined
+        - add_config_map | bool
+      block:
+        - name: '{{ ansible_name_module }} | assert | git host is defined'
+          ansible.builtin.assert:
+            that:
+              - githost_fqdn is defined
+              - githost_fqdn != '' 
+            msg: "The git repository fqdn is required to create the git CA cnfig map and configure th git services."
+
+        - name: '{{ ansible_name_module }} | stat | Check if aide conf file exist'
+          ansible.builtin.stat:
+            path: "{{ git_ca_file }}"
+            get_checksum: false
+          when:
+            - git_ca_file is defined 
+            - git_ca_file != '' 
+          register: git_cafile_exist
+
+        - name: '{{ ansible_name_module }} | extract existing certificates from user-ca-bundle CM'
+          when:
+            - not git_ca_file is defined or git_ca_file == '' or (git_cafile_exist is defined and not git_cafile_exist.stat is defined)  or (git_cafile_exist and  git_cafile_exist.stat is defined and git_cafile_exist.stat.exists is defined and git_cafile_exist.stat.exists is defined and not git_cafile_exist.stat.exists | bool)
+          block:
+            - name: '{{ ansible_name_module }} | file:directory | Ensure the certs staging directory exist'
+              ansible.builtin.file:
+                path: "{{ /tmp/user-ca-bundle }}"
+                state: directory
+                mode: 0777
+
+            - name: '{{ ansible_name_module }} | import_tasks | import of extract-certificate.yml to pull exisitng ca certs'
+              vars:
+                existing_ca_bundle_cm_name: 'user-ca-bundle'
+                existing_ca_bundle_cm_namespace: 'openshift-devspaces'
+                extracted_custom_ca_file: '/tmp/user-ca-bundle'
+              ansible.builtin.import_tasks: ../roles/copy-user-ca-bundle-cm-into-new-ca-bundle/tasks/extract-certificate.yml
+
+            - name: '{{ ansible_name_module }} | set_fact |  git CA file '
+              ansible.builtin.set_fact:
+                git_ca_file: "/tmp/user-ca-bundle/ca-bundle.crt"
+
+        - name: '{{ ansible_name_module }} | Retrieve git CA ConfigMap'
+          ansible.builtin.shell: >
+             {{ openshift_cli }} get configmap {{ git_cert_cm | default('gitlab-ca-bundle', true) }} --no-headers -n openshift-devspaces | awk '{print $1}' 
+          ignore_errors: true
+          register: gitca_cm_created
+
+        - name: '{{ ansible_name_module }} | Remove exitsting git CA ConfigMap if necessary'
+          ansible.builtin.shell: >
+             {{ openshift_cli }} delete configmap {{ git_cert_cm | default('gitlab-ca-bundle', true) }} -n openshift-devspaces
+          when:
+            - gitca_cm_check is defined 
+            - gitca_cm_check.rc is defined 
+            - gitca_cm_check.rc == 0 
+            - gitca_cm_check.stdout is defined 
+            - gitca_cm_check.stdout != '' 
+          register: gitca_cm_created
+
+        - name: '{{ ansible_name_module }} | Add git CA ConfigMap'
+          ansible.builtin.command: >
+             {{ openshift_cli }} create configmap  {{ git_cert_cm | default('gitlab-ca-bundle', true) }} \ 
+               --from-file=ca.crt={{ git_ca_file }} \ 
+               --from-literal=githost={{ githost_fqdn }}:{{ githost_port | default('443', true) }} \
+                -n openshift-devspaces
+          failed_when:
+            - gitca_cm_created.rc is defined
+            - gitca_cm_created.rc >= 1
+            - gitca_cm_created.stderr is defined
+            - " not  'already exists' in gitca_cm_created.stderr "
+          register: gitca_cm_created
+
+        - name: '{{ ansible_name_module }} | Label git CA ConfigMap'
+          ansible.builtin.command: >
+            {{ openshift_cli }} label configmap  {{ git_cert_cm | default('gitlab-ca-bundle', true) }} \
+              app.kubernetes.io/part-of=che.eclipse.org -n openshift-devspaces 
+          register: gitca_cm_labeled
+
+
+    - name: '{{ ansible_name_module }} | set_fact |  devspace node selector'
+      ansible.builtin.set_fact:
+        devspaces_nodeselector: "node-role.kubernetes.io/devspaces=''"
+      when:
+        - not devspaces_nodeselector is defined or devspaces_nodeselector == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | devspaces storage class'
+      ansible.builtin.set_fact:
+        devspaces_sc: ""
+      when:
+        - not devspaces_sc is defined or devspaces_sc == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | devspaces Workspce running limit'
+      ansible.builtin.set_fact:
+        devspaces_workspace_running_limit: "3"
+      when:
+        - not devspaces_workspace_running_limit is defined or devspaces_workspace_running_limit == ''
+
+    - name: '{{ ansible_name_module }} | Derive node selector value if needed' 
+      when:
+        - set_node_selector is defined
+        - set_node_selector | bool
+        - devspaces_nodeselector is defined
+        - devspaces_nodeselector != '' 
+      block:
+        - name: '{{ ansible_name_module }} | set_fact |  devspace node selector label '
+          ansible.builtin.set_fact:
+            devspaces_nodeselector_label: "{{ devspaces_nodeselector.split('=')[0] }}"
+
+        - name: '{{ ansible_name_module }} | set_fact |  devspace node selector value'
+          ansible.builtin.set_fact:
+            devspaces_nodeselector_value: '{{ devspaces_nodeselector.split("=")[1] if ( devspaces_nodeselector.split("=")[1] is defined and  devspaces_nodeselector.split("=")[1] | length > 0) else "" }}'
+
+    - name: '{{ ansible_name_module }} | set_fact |  devspace max workspace per user'
+      ansible.builtin.set_fact:
+        devspaces_max_workspace_per_user: "2" 
+      when:
+        - not devspaces_max_workspace_per_user is defined or devspaces_max_workspace_per_user != ''
+
+    - name: '{{ ansible_name_module }} | set_fact |  devspace max running workspace per user'
+      ansible.builtin.set_fact:
+        devspaces_max_running_workspace_per_user: "2"
+      when:
+        - not devspaces_max_running_workspace_per_user is defined or devspaces_max_running_workspace_per_user != ''
+
+    - name: '{{ ansible_name_module }} | set_fact |  devspace auto provisioning workspace namespace'
+      ansible.builtin.set_fact:
+        devspaces_auto_namespace: "true"
+      when:
+        - not devspaces_auto_namespace is defined or devspaces_auto_namespace == ''
+
+    - name: '{{ ansible_name_module }} | set_fact |  devspace auto provisioning workspace namespace template'
+      ansible.builtin.set_fact:
+        devspaces_namespace_template: "<username>-devspaces"
+      when:
+        - not devspaces_namespace_template is defined or devspaces_namespace_template == ''
+
+    - name: '{{ ansible_name_module }} | set_fact |  devspace workspace pvc strategy'
+      ansible.builtin.set_fact:
+        devspaces_pvc_strategy: "per-user"
+      when:
+        - not devspaces_pvc_strategy is defined or devspaces_pvc_strategy == ''
+
+    - name: '{{ ansible_name_module }} | Derive toleration label and value if needed' 
+      when:
+        - set_tolerations is defined
+        - set_tolerations | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact |  devspace node taint label key'
+          ansible.builtin.set_fact:
+            devspaces_taint_label: "devspaces"
+          when:
+            - not devspaces_taint_label is defined or devspaces_taint_label == ''
+
+        - name: '{{ ansible_name_module }} | set_fact |  devspace node taint value'
+          ansible.builtin.set_fact:
+           devspaces_taint_value: "reserved"
+          when:
+            - not devspaces_taint_value is defined or devspaces_taint_value == ''
+
+    - name: '{{ ansible_name_module }} | patch checluster set git services'
+      when:
+        - set_git_services is defined
+        - set_git_services | bool 
+      block:
+        - name: '{{ ansible_name_module }} | assert | git host is defined'
+          ansible.builtin.assert:
+            that:
+              - githost_fqdn is defined
+              - githost_fqdn != '' 
+            msg: "The git repository fqdn is required to create the git CA config map and configure the git services."
+
+        - name: '{{ ansible_name_module }} | assert | git oauth config secret name is defined'
+          ansible.builtin.assert:
+            that:
+              - git_oauth_secret_name is defined
+              - git_oauth_secret_name != '' 
+            msg: "The git repository oauth secret name is required to configure the git services."
+
+        - name: '{{ ansible_name_module }} | set_fact |  devspace git host http endpoint'
+          ansible.builtin.set_fact:
+            githost_fqdn_http_endpoint: "https://{{ githost_fqdn }}"
+
+        - name: '{{ ansible_name_module }} | Add Gitlab oauth secret'
+          when:
+            - add_gitlab_oauth_secret is defined
+            - add_gitlab_oauth_secret | bool 
+            - gitlab_oauth_secret_id is defined
+            - gitlab_oauth_secret_id != ''
+            - git_oauth_secret is defined
+            - git_oauth_secret != '' 
+          block:
+            - name: '{{ ansible_name_module }} | set_fact |  devspace git host http endpoint'
+              ansible.builtin.set_fact:
+                git_oauth_secret_name: "gitlab-oauth-config"
+              when:
+                - not git_oauth_secret_name is defined or git_oauth_secret_name == ''
+
+            - name: '{{ ansible_name_module }} | Get Existing gitlab oauth secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} get secret {{ git_oauth_secret_name }} -n openshift-devspaces
+              ignore_errors: yes
+              register: gitlab_oauth_secret_exist
+
+            - name: '{{ ansible_name_module }} | Delete Existing gitlab oauth secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} delete secret {{ git_oauth_secret_name }} -n openshift-devspaces
+              ignore_errors: yes
+              when:
+                - gitlab_oauth_secret_exist.rc is defined
+                - gitlab_oauth_secret_exist.rc == 0
+              register: gitlab_oauth_secret_exist
+
+            - name: '{{ ansible_name_module }} | create gitlab oauth secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create secret generic {{ git_oauth_secret_name }} --from-literal=id={{ gitlab_oauth_secret_id }} \
+                  --from-literal=secret={{ git_oauth_secret }} -n openshift-devspaces
+              register: gitlab_oauth_secret_created
+
+            - name: '{{ ansible_name_module }} | Label gitlab oauth secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} label secret {{ git_oauth_secret_name }} \
+                   app.kubernetes.io/component=oauth-scm-configuration  app.kubernetes.io/part-of=che.eclipse.org --overwrite -n openshift-devspaces 
+              when:
+                - gitlab_oauth_secret_created is defined
+                - gitlab_oauth_secret_created.rc is defined
+                - gitlab_oauth_secret_created.rc == 0 
+              register: gitlab_oauth_secret_labeled
+
+            - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | annotate secret with scm sever'
+              ansible.builtin.command: >
+                {{ openshift_cli }} annotate  --overwrite secret {{ git_oauth_secret_name }} \
+                   'che.eclipse.org/oauth-scm-server'=gitlab -n openshift-devspaces 
+              when:
+                - gitlab_oauth_secret_created is defined
+                - gitlab_oauth_secret_created.rc is defined
+                - gitlab_oauth_secret_created.rc == 0 
+              register: gitlab_oauth_secret_annotated
+
+            - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | annotate secret with scm sever endpoint'
+              ansible.builtin.command: >
+                {{ openshift_cli }} annotate  --overwrite secret {{ git_oauth_secret_name }} \
+                   'che.eclipse.org/scm-server-endpoint'={{ githost_fqdn_http_endpoint }} -n openshift-devspaces 
+              when:
+                - gitlab_oauth_secret_created is defined
+                - gitlab_oauth_secret_created.rc is defined
+                - gitlab_oauth_secret_created.rc == 0 
+              register: gitlab_oauth_secret_ep_annotated
+
+    - name: '{{ ansible_name_module }} | set checluster hostname'
+      when:
+        - set_checluster_hostname is defined
+        - set_checluster_hostname | bool 
+      block:
+        - name: '{{ ansible_name_module }} | assert | checluster hostname is defined'
+          ansible.builtin.assert:
+            that:
+              - checluster_hostname is defined
+              - checluster_hostname != '' 
+            msg: "The checluster hostname is required to set a hostname for the checluster."
+
+        - name: '{{ ansible_name_module }} | assert | checluster secret name is defined'
+          ansible.builtin.assert:
+            that:
+              - checluster_secret_name is defined
+              - checluster_secret_name != '' 
+            msg: "The checluster secret name is required to configure the checluster hostname."
+
+        - name: '{{ ansible_name_module }} | Get checluster hostname secret'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get secret {{ checluster_secret_name }} -n openshift-devspaces | awk '{print $1}'
+          ignore_errors: yes
+          register: checluster_secret_exist
+
+        - name: '{{ ansible_name_module }} | assert | checluster hostname secret exist '
+          ansible.builtin.assert:
+            that:
+              - not add_checluster_secret is defined or not add_checluster_secret | bool
+              - checluster_secret_exist.stdout is defined
+              - checluster_secret_exist.stdout == '' or not checluster_secret_name in checluster_secret_exist.stdout  
+            msg: "The Checluster secret is required to configure the checluster hostname."
+
+        - name: '{{ ansible_name_module }} | Add the checluster hostname secret if needed'
+          when:
+            - add_checluster_secret is defined
+            - add_checluster_secret | bool
+          block:
+            - name: '{{ ansible_name_module }} | assert | checluster tls key file is defined'
+              ansible.builtin.assert:
+                that:
+                  - checluster_tls_key_file is defined
+                  - checluster_tls_key_file != '' 
+                msg: "The Checluster TLS key file is required to configure the secret for the hostname."
+
+            - name: '{{ ansible_name_module }} | assert | checluster tls cert file is defined'
+              ansible.builtin.assert:
+                that:
+                  - checluster_tls_cert_file is defined
+                  - checluster_tls_cert_file != '' 
+                msg: "The Checluster TLS cert file is required to configure the secret for the hostname."
+
+            - name: '{{ ansible_name_module }} | stat | Check if checluster tls key file exist'
+              ansible.builtin.stat:
+                path: "{{ checluster_tls_key_file }}"
+                get_checksum: false
+              register: checluster_tlskeyfile_exist
+
+            - name: '{{ ansible_name_module }} | stat | Check if checluster tls cert file exist'
+              ansible.builtin.stat:
+                path: "{{ checluster_tls_cert_file }}"
+                get_checksum: false
+              register: checluster_tlscertfile_exist
+
+            - name: '{{ ansible_name_module }} | delete existing checluster hostname secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} delete secret {{ checluster_secret_name }} -n openshift-devspaces
+              ignore_errors: yes
+              when:
+                - checluster_secret_exist is defined
+                - checluster_secret_exist.rc is defined
+                - checluster_secret_exist.rc == 0 
+                - checluster_secret_exist.stdout is defined
+                - checluster_secret_exist.stdout != '' 
+                - checluster_secret_name in checluster_secret_exist.stdout
+              register: checluster_secret_old_removed
+
+            - name: '{{ ansible_name_module }} | create checluster hostname secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create secret tls {{ checluster_secret_name }} --key {{ checluster_tls_key_file }} \
+                  --cert {{ checluster_tls_cert_file }} -n openshift-devspaces
+              register: checluster_secret_created
+
+            - name: '{{ ansible_name_module }} | Label checluster hostname secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} label secret {{ checluster_secret_name }} \
+                   app.kubernetes.io/part-of=che.eclipse.org --overwrite -n openshift-devspaces 
+              when:
+                - checluster_secret_created is defined
+                - checluster_secret_created.rc is defined
+                - checluster_secret_created.rc == 0 
+              register: checluster_secret_labeled
+
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_infra_id
+
+    - name: '{{ ansible_name_module }} | set_fact | set cluster name'
+      set_fact:
+        cluster_id: "{{ cluster_infra_id.stdout }}"
+      when:
+        - cluster_infra_id is defined 
+        - cluster_infra_id.stdout is defined
+        - cluster_infra_id.stdout != '' 
+
+    - name: '{{ ansible_name_module }} | template | Copy CheCluster CR '
+      template:
+        src: "templates/checluster-devspaces.j2.yml"
+        dest: "{{ staging_dir | d('/tmp', true) }}/checluster-devspaces-{{ cluster_id }}.yml"
+        force: yes
+      vars:
+      register: checluster_config_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy CheCluster CR '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/checluster-devspaces-{{ cluster_id }}.yml
+      when:
+        - checluster_config_copied is defined
+        - checluster_config_copied.changed is defined
+        - checluster_config_copied.changed | bool
+        - checluster_config_copied.dest is defined
+        - "'checluster-devspaces' in  checluster_config_copied.dest" 
+        - checluster_config_copied.state is defined
+        - "'file' in checluster_config_copied.state" 
+      register: checluster_config_deployed
