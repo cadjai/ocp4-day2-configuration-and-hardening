@@ -3,6 +3,7 @@
   vars_files:
     - 'vars/vault.yml'
     - 'vars/global.yml'
+    - 'vars/devspaces.yml'
   vars:
     ansible_python_interpreter: /usr/bin/python3
     module: "Apply Additional configuration to DevSpace Checluster Config"
@@ -285,7 +286,7 @@
 
         - name: '{{ ansible_name_module }} | set_fact |  devspace git host http endpoint'
           ansible.builtin.set_fact:
-            githost_fqdn_http_endpoint: "https://{{ githost_fqdn }}"
+            githost_fqdn_https_endpoint: "https://{{ githost_fqdn }}"
 
         - name: '{{ ansible_name_module }} | Add Gitlab oauth secret'
           when:
@@ -346,7 +347,7 @@
             - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | annotate secret with scm sever endpoint'
               ansible.builtin.command: >
                 {{ openshift_cli }} annotate  --overwrite secret {{ git_oauth_secret_name }} \
-                   'che.eclipse.org/scm-server-endpoint'={{ githost_fqdn_http_endpoint }} -n openshift-devspaces 
+                   'che.eclipse.org/scm-server-endpoint'={{ githost_fqdn_https_endpoint }} -n openshift-devspaces 
               when:
                 - gitlab_oauth_secret_created is defined
                 - gitlab_oauth_secret_created.rc is defined
@@ -445,6 +446,30 @@
                 - checluster_secret_created.rc is defined
                 - checluster_secret_created.rc == 0 
               register: checluster_secret_labeled
+
+    - name: '{{ ansible_name_module }} | Add the custom container build SCC if needed'
+      when:
+        - set_container_build_configuration is defined
+        - set_container_build_configuration | bool
+      block:
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy container build scc '
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ playbook_dir }}/templates/container-build-scc.yaml 
+          register: container_build_scc_applied 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy container build rbac '
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ playbook_dir }}/templates/container-build-rbac.yaml 
+          register: container_build_rbac_applied 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} adm | apply rb to service account'
+          ansible.builtin.command: >
+            {{ openshift_cli }} adm policy add-cluster-role-to-user \
+                get-n-update-container-build-scc \
+                system:serviceaccount:openshift-operators:devworkspace-controller-serviceaccount 
+          register: container_build_rb_applied 
+          ## TODO Grant container-build scc to users needing to perform container build. This could be added to the NS
+          ## TODO Apply controller.devfile.io/scc: container-build to devfile used to perform container build 
 
     - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
       ansible.builtin.command: >

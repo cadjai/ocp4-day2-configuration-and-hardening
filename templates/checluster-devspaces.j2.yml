@@ -8,9 +8,34 @@ metadata:
 spec:
   components:
     cheServer:
+{% if set_addl_cluster_roles is defined and set_addl_cluster_roles | bool %}
+{% if devspaces_addl_cluster_roles is defined and devspaces_addl_cluster_roles != '' %}
+      clusterRoles:
+        ##TODO Define injection of devspaces_addl_cluster_roles
+{% endif %}
+{% endif %}
+{% if set_checluster_deployment_override is defined and set_checluster_deployment_override | bool %}
+      deployment: 
+{% if devspaces_images is defined and devspaces_images != '' %}
+        containers: 
+        ##TODO Define injection of devspaces_images 
+          - image: {{ devspaces_images }}
+{% endif %}
+{% if set_checluster_scc is defined and set_checluster_scc | bool %}
+        securityContext: 
+          fsGroup: {{ devspaces_scc_fsgroup }}
+          runAsUser: {{ devspaces_scc_runasuser }}
+{% endif %}
+{% else %}
+      deployment: {} 
+{% endif %}
       debug: false
       extraProperties:
+{% if devspaces_storage_class is defined and devspaces_storage_class != '' %}
+        CHE_INFRA_KUBERNETES_PVC_STORAGE__CLASS__NAME: "{{ devspaces_storage_class }}"
+{% else %}
         CHE_INFRA_KUBERNETES_PVC_STORAGE__CLASS__NAME: ""
+{% endif %}
 {% if set_node_selector is defined and set_node_selector | bool %}
         CHE_WORKSPACE_POD_NODE__SELECTOR: {{ devspaces_nodeselector }} 
 {% endif %}
@@ -35,18 +60,44 @@ spec:
       runningLimit: "{{ devspaces_workspace_running_limit | default('2', true) }}"
     devfileRegistry:
       deployment: {}
+      disableInternalRegistry: false
+{% if set_external_devfile_registries is defined and set_external_devfile_registries | bool and devfile_registries_urls is defined and devfile_registries_urls | length > 0 %}
+      externalDevfileRegistries: 
+         url:
+        ##TODO Define injection of devfile_registries_urls 
+{% else %}
+      externalDevfileRegistries: {}
+{% endif %}
     imagePuller:
       enable: false
       spec: {}
     metrics:
       enable: true
+{% if deploy_custom_plugin_registry is defined and deploy_custom_plugin_registry | bool %}
+{% if plugin_registry_image is defined and plugin_registry_image != '' %}
+    pluginRegistry: 
+      deployment: 
+        containers: 
+          - image: {{ plugin_registry_image }}
+{% endif %}
+{% if plugin_registry_openvsxurl is defined and plugin_registry_openvsxurl != '' %}
+      openVSXURL: {{ plugin_registry_openvsxurl }} 
+{% endif %}
+{% else %}
     pluginRegistry: {}
+{% endif %}
   containerRegistry: {}
   devEnvironments:
+{% if set_container_build_configuration is defined and set_container_build_configuration | bool %}
+    containerBuildConfiguration:
+      openShiftSecurityContextContraint: {{ container_build_configuration_scc | default('container-build', true) }}
+    disableContainerBuildCapabilities: false
+{% else %}
+    disableContainerBuildCapabilities: true
+{% endif %}
     defaultNamespace:
       autoProvision: {{ devspaces_auto_namespace | default('true', true) }}
       template: {{ devspaces_namespace_template | default('<username>-devspaces', true) }}
-    disableContainerBuildCapabilities: true
     maxNumberOfRunningWorkspacesPerUser: {{ devspaces_max_running_workspace_per_user | default('2', true) }}
     maxNumberOfWorkspacesPerUser: {{ devspaces_max_workspace_per_user | default('2', true) }}
 {% if set_node_selector is defined and set_node_selector | bool %}
@@ -58,6 +109,14 @@ spec:
     startTimeoutSeconds: 300
     storage:
       pvcStrategy: {{ devspaces_pvc_strategy | default('per-user', true) }}
+{% if not devspaces_pvc_strategy is defined or (devspaces_pvc_strategy is defined and 'per-user' in devspaces_pvc_strategy) %}
+      perUserStrategyPvcConfig:
+        claimSize: {{ devspaces_peruser_pvc_size | default('10Gi', true) }}
+{% else %}
+      perWorkspaceStrategyPvcConfig:
+        claimSize: {{ devspaces_perworkspace_pvc_size | default('25Gi', true) }}
+{% endif %}
+        storageClass: {{ devspaces_storage_class  | default('', true) }}
 {% if set_tolerations is defined and set_tolerations | bool %}
     tolerations:
     - effect: NoSchedule
@@ -74,7 +133,7 @@ spec:
 {% if set_git_services is defined and set_git_services | bool %}
   gitServices:
     gitlab:
-    - endpoint: {{ githost_fqdn_http_endpoint }} 
+    - endpoint: {{ githost_fqdn_https_endpoint }} 
       secretName: {{ git_oauth_secret_name }} 
 {% else %}
   gitServices: {}
@@ -82,6 +141,17 @@ spec:
   networking:
     auth:
       gateway:
+{% if set_gateway_identity_provider is defined and set_gateway_identity_provider | bool %}
+{% gateway_id_provider_url is defined and gateway_id_provider_url != '' %}
+      identityProviderURL: {{ gateway_id_provider_url }}
+{% endif %}
+{% endif %}
+{% if set_gateway_oauth_client is defined and set_gateway_oauth_client | bool %}
+{% gateway_oauth_client_name is defined and gateway_oauth_client_name != '' and gateway_oauth_secret is defined and gateway_oauth_secret != '' %}
+      oAuthClientName: {{ gateway_oauth_client_name }}
+      oAuthSecret: {{ gateway_oauth_secret }}
+{% endif %}
+{% endif %}
         configLabels:
           app: che
           component: che-gateway-config

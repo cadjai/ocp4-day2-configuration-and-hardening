@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: get-n-update-container-build-scc
+rules:
+- apiGroups:
+  - "security.openshift.io"
+  resources:
+  - "securitycontextconstraints"
+  resourceNames:
+  - "container-build"
+  verbs:
+  - "get"
+  - "update"
