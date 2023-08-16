@@ -169,7 +169,7 @@
           ansible.builtin.command: >
              {{ openshift_cli }} create configmap  {{ git_cert_cm | default('gitlab-ca-bundle', true) }} \ 
                --from-file=ca.crt={{ git_ca_file }} \ 
-               --from-literal=githost={{ githost_fqdn }}:{{ githost_port | default('443', true) }} \
+               --from-literal=githost=https://{{ githost_fqdn }}:{{ githost_port | default('443', true) }} \
                 -n openshift-devspaces
           failed_when:
             - gitca_cm_created.rc is defined

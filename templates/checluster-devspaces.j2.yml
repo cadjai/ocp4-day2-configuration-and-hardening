@@ -66,7 +66,7 @@ spec:
          url:
         ##TODO Define injection of devfile_registries_urls 
 {% else %}
-      externalDevfileRegistries: {}
+      externalDevfileRegistries: []
 {% endif %}
     imagePuller:
       enable: false
@@ -122,11 +122,13 @@ spec:
     - effect: NoSchedule
       key: {{ devspaces_taint_label }}
       value: {{ devspaces_taint_value }}
+      operator: Equal
     - effect: NoExecute
       key: {{ devspaces_taint_label }}
       value: {{ devspaces_taint_value }}
+      operator: Equal
 {% endif %}
-{% if add_config_map is defined and add_config_map | bool %}
+{% if git_cert_cm is defined and git_cert_cm != '' %}
     trustedCerts:
       gitTrustedCertsConfigMapName: {{ git_cert_cm }} 
 {% endif %}
@@ -142,12 +144,12 @@ spec:
     auth:
       gateway:
 {% if set_gateway_identity_provider is defined and set_gateway_identity_provider | bool %}
-{% gateway_id_provider_url is defined and gateway_id_provider_url != '' %}
+{% if gateway_id_provider_url is defined and gateway_id_provider_url != '' %}
       identityProviderURL: {{ gateway_id_provider_url }}
 {% endif %}
 {% endif %}
 {% if set_gateway_oauth_client is defined and set_gateway_oauth_client | bool %}
-{% gateway_oauth_client_name is defined and gateway_oauth_client_name != '' and gateway_oauth_secret is defined and gateway_oauth_secret != '' %}
+{% if gateway_oauth_client_name is defined and gateway_oauth_client_name != '' and gateway_oauth_secret is defined and gateway_oauth_secret != '' %}
       oAuthClientName: {{ gateway_oauth_client_name }}
       oAuthSecret: {{ gateway_oauth_secret }}
 {% endif %}
