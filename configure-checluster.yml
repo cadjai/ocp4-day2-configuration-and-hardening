@@ -152,7 +152,7 @@
           ansible.builtin.shell: >
              {{ openshift_cli }} get configmap {{ git_cert_cm | default('gitlab-ca-bundle', true) }} --no-headers -n openshift-devspaces | awk '{print $1}' 
           ignore_errors: true
-          register: gitca_cm_created
+          register: gitca_cm_check 
 
         - name: '{{ ansible_name_module }} | Remove exitsting git CA ConfigMap if necessary'
           ansible.builtin.shell: >
@@ -498,8 +498,6 @@
         {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/checluster-devspaces-{{ cluster_id }}.yml
       when:
         - checluster_config_copied is defined
-        - checluster_config_copied.changed is defined
-        - checluster_config_copied.changed | bool
         - checluster_config_copied.dest is defined
         - "'checluster-devspaces' in  checluster_config_copied.dest" 
         - checluster_config_copied.state is defined
