@@ -17,10 +17,17 @@
 
     - name: '{{ ansible_name_module }} | template | Copy Template Request for each developer '
       ansible.builtin.template:
-        src: "templates/devspaces-namespace.j2.yml"
+        src: "templates/devspaces-namespace.yml.j2"
         dest: "{{ playbook_dir }}/{{ namespace_env }}/{{ item.value.username }}-devspaces-namespace.yml"
         force: yes
       with_dict:
         - "{{ devspaces.projects }}"
       register: devspace_ns_rendered 
+
+    - name: '{{ ansible_name_module }} | template | Copy SCC Rolebinding for each developer '
+      ansible.builtin.template:
+        src: "templates/devspaces-developer-scc-rb.yml.j2"
+        dest: "{{ playbook_dir }}/{{ namespace_env }}/devspaces-developer-scc-rb.yml"
+        force: yes
+      register: devspace_containerbuild_sccrb_rendered 
 

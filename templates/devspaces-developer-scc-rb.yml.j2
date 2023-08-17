@@ -1,0 +1,18 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:openshift:scc:{{ container_build_configuration_scc | default('container-build', true) }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:{{ container_build_configuration_scc | default('container-build', true) }}
+subjects:
+{% if devspaces.projects is defined and devspaces.projects | length > 0 %}
+{% for project in devspaces.projects.values() %}
+{% if project.add_container_build_scc is defined and project.add_container_build_scc | bool %}
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: {{ project.username }}
+{% endif %}
+{% endfor %}
+{% endif %}
