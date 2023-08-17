@@ -1,0 +1,141 @@
+---
+apiVersion: project.openshift.io/v1
+kind: Project
+metadata:
+  labels:
+    app.kubernetes.io/part-of: che.eclipse.org
+    app.kubernetes.io/component: workspaces-namespace
+  annotations:
+    openshift.io/description: {{ item.value.description }} 
+    openshift.io/display-name: {{ item.value.display_name }}
+    openshift.io/requester: 'DPaaS Team'
+    che.eclipse.org/username: {{ item.value.username }}
+  name: {{ item.value.name }} 
+  namespace: {{ item.value.name }} 
+---
+apiVersion: v1
+kind: "LimitRange"
+metadata:
+  name: project-limits
+spec:
+  limits:
+    - type: "Container"
+      min:
+        cpu: "10m"
+        memory: "4Mi"
+      default:
+        cpu: "100m"
+        memory: "200Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "200Mi"
+    - type: "Pod"
+      max:
+        cpu: "4" 
+        memory: "4Gi" 
+      min:
+        cpu: "10m" 
+        memory: "4Mi"
+    - type: openshift.io/ImageStream
+      max:
+        openshift.io/image-tags: 15 
+        openshift.io/images: 30 
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+spec:
+  hard:
+    pods: "20" 
+    requests.cpu: "1" 
+    requests.memory: 2Gi 
+    limits.cpu: "4" 
+    limits.memory: 8Gi
+    requests.storage: "5G"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ item.value.name }}-allow-from-same-namespace
+  namespace: {{ item.value.name }}
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ item.value.name }}-allow-from-openshift-ingress
+  namespace: {{ item.value.name }}
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: ingress
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ item.value.name }}-allow-from-openshift-monitoring
+  namespace: {{ item.value.name }}
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: monitoring
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ item.value.name }}-allow-openshift-console-namespace
+  namespace: {{ item.value.name }}
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: openshift-console
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ item.value.name }}-allow-openshift-operators-namespace
+  namespace: {{ item.value.name }}
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: openshift-operators
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ item.value.name }}-allow-openshift-devspaces-namespace
+  namespace: {{ item.value.name }}
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: openshift-devspaces
+  podSelector: {}
+  policyTypes:
+  - Ingress

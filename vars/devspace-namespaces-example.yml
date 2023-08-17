@@ -1,0 +1,18 @@
+---
+namespace_type: 'devspaces'
+namespace_env: ''
+devspaces:
+  namespace_name: 'devspaces'
+  projects:
+    developer1:
+      display_name: 'develper 1 devspace namespace'
+      description: 'develper 1 devspace namespace'
+      name: 'developer1'
+      username: 'devloper1'
+      add_container_build_scc: 'true'
+    developer2:
+      display_name: 'develper 2 devspace namespace'
+      description: 'develper 2 devspace namespace'
+      name: 'developer2'
+      username: 'devloper2'
+      add_container_build_scc: 'false'
