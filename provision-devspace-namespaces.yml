@@ -1,25 +1,51 @@
+- name: Include the devspace namespce manifest playbook
+  ansible.builtin.import_playbook: provision-devspace-namespaces-manifests.yml
+
 - name: ' Konductor | Provision UPI Infra | configure-devspace-namespaces.yml'
   hosts: localhost
   vars_files:
+    - 'vars/vault.yml'
     - 'vars/devspace-namespaces.yml'
   vars:
     ansible_python_interpreter: /usr/bin/python3
-    module: "Configure devspace Namespaces "
+    module: "Provision devspace Namespaces "
     ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
 
-  tasks:
-    - name: '{{ ansible_name_module }} | file | Ensure the directory to store the rendered manifest exists '
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/{{ namespace_env }}"
-        state: directory
-        mode: '0755'
-      register: devspace_ns_manifest_dir_created 
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
 
-    - name: '{{ ansible_name_module }} | template | Copy Template Request for each developer '
-      ansible.builtin.template:
-        src: "templates/devspaces-namespace.j2.yml"
-        dest: "{{ playbook_dir }}/{{ namespace_env }}/{{ item.value.username }}-devspaces-namespace.yml"
-        force: yes
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy devspace namespaces'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ playbook_dir }}/{{ namespace_env }}/{{ item.value.username }}-devspaces-namespace.yml 
       with_dict:
         - "{{ devspaces.projects }}"
       register: devspace_ns_rendered 
