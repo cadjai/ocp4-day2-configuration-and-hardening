@@ -118,7 +118,7 @@
               - githost_fqdn != '' 
             msg: "The git repository fqdn is required to create the git CA cnfig map and configure th git services."
 
-        - name: '{{ ansible_name_module }} | stat | Check if aide conf file exist'
+        - name: '{{ ansible_name_module }} | stat | Check if git ca file exist'
           ansible.builtin.stat:
             path: "{{ git_ca_file }}"
             get_checksum: false
