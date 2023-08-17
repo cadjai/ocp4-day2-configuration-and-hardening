@@ -1,0 +1,26 @@
+- name: ' Konductor | Provision UPI Infra | provision-devspace-namespaces-manifests.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/devspace-namespaces.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Configure devspace Namespaces "
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | file | Ensure the directory to store the rendered manifest exists '
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/{{ namespace_env }}"
+        state: directory
+        mode: '0755'
+      register: devspace_ns_manifest_dir_created 
+
+    - name: '{{ ansible_name_module }} | template | Copy Template Request for each developer '
+      ansible.builtin.template:
+        src: "templates/devspaces-namespace.j2.yml"
+        dest: "{{ playbook_dir }}/{{ namespace_env }}/{{ item.value.username }}-devspaces-namespace.yml"
+        force: yes
+      with_dict:
+        - "{{ devspaces.projects }}"
+      register: devspace_ns_rendered 
+
