@@ -44,6 +44,12 @@
          {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq
       register: node_roles
 
+    - name: '{{ ansible_name_module }} | set node role to worker if not set due to dual roles'
+      set_facts: >
+        node_roles.stdout_lines: "{{ node_roles.stdout_lines | default([], true) + ['worker'] }}"
+      when:
+        - not node_roles.stdout_lines is defined or node_roles.stdout_lines == 0
+
     - name: '{{ ansible_name_module }} | template | Render Streaming Connection Timeout KC'
       vars:
         node_role: "{{ item }}"
