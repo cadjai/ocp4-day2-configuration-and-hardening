@@ -1,0 +1,36 @@
+- name: 'Add Infranodes to cluster | add-special-workload-nodes.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/special-worker-node.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "add-and-configure-infranodes"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: Import special node provisioning task book
+      import_role:
+        name: add-and-config-infranodes
+        tasks_from: add-special-node-to-cluster.yml
