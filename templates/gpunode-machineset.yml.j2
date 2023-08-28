@@ -77,6 +77,6 @@ spec:
           - name: env_type 
             value: {{ node_env | default('dev', true) }}
           - name: owner
-            value: {{ node_owner | default('dpaas', true) }}
+            value: {{ node_owner }}
           userDataSecret:
             name: worker-user-data

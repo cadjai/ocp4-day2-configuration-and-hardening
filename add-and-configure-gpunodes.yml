@@ -28,6 +28,20 @@
           --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
       register: login_out
 
+    - name: '{{ ansible_name_module }} | assert | gpunode.requester is defined'
+      assert:
+        that:
+          - gpunode.requester is defined
+          - gpunode.requester != ''
+        msg: "gpunode.requester is required so we can assing the workload node to a tenant"
+      
+    - name: '{{ ansible_name_module }} | assert | gpunode.taint_key is defined'
+      assert:
+        that:
+          - gpunode.taint_key is defined
+          - gpunode.taint_key != ''
+        msg: "gpunode.requester is required so we can assing the workload node to a tenant"
+
     - name: '{{ ansible_name_module }} | Ensure required conditions are met'
       block:
         - name: '{{ ansible_name_module }} | Check if Namespaces exist'
@@ -156,7 +170,7 @@
 
         - name: '{{ ansible_name_module }} | template | Copy ClusterPolicy template to staging location'
           vars:
-            node_taint: "{{ gpunode.taint_key | d('dpaas', true) }}"
+            node_taint: "{{ gpunode.taint_key }}"
           template:
             src: "templates/clusterpolicy-gpu-cluster-policy.yaml.j2"
             dest: "{{ staging_dir | d('/tmp', true) }}/clusterpolicy-gpu-cluster-policy.yaml"
@@ -165,7 +179,7 @@
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy NFD CR '
           vars:
-            node_taint: "{{ gpunode.taint_key | d('dpaas', true) }}"
+            node_taint: "{{ gpunode.taint_key }}"
           command: >
             {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/clusterpolicy-gpu-cluster-policy.yaml
           ignore_errors: yes
@@ -177,7 +191,7 @@
 
         - name: '{{ ansible_name_module }} | Patch NFD-Worker Daemonset to include GPU node role'
           vars:
-            node_taint: "{{ gpunode.taint_key | d('dpaas', true) }}"
+            node_taint: "{{ gpunode.taint_key }}"
             glabel: "{{ gpu_label | d('gpu', true) }}"
           command: >
             {{ openshift_cli }} patch clusterpolicy gpu-cluster-policy -n nvidia-gpu-operator  --type=merge -p --type=merge -p '{"spec":{"daemonsets":{"tolerations":[{"effect":"NoSchedule","key": "{{ glabel }}","value": "{{ node_taint }}"},{"effect":"NoExecute","key": "{{ glabel }}","value": "{{ node_taint }}"}] }}}'
@@ -219,9 +233,9 @@
         node_gpu_count: "{{ gpunode.gpu_count | d('1', true) }}"
         node_memory_size: "{{ gpunode.mem_size | d('16384', true) }}"
         node_cpu_count: "{{ gpunode.cpu_count | d('4', true) }}"
-        node_owner: "{{ gpunode.requester | d('dpaas', true) }}"
+        node_owner: "{{ gpunode.requester }}"
         node_env: "{{ gpunode.env | d('dev', true) }}"
-        node_taint: "{{ gpunode.taint_key | d('dpaas', true) }}"
+        node_taint: "{{ gpunode.taint_key }}"
       register: gpu_machineset_config_copied
 
     - name: '{{ ansible_name_module }} | template | Copy gpunode machine autoscaler template to staging location'
@@ -233,7 +247,7 @@
         infra_id: "{{ cluster_infra_id.stdout }}"
         aws_az: "{{ gpunode.instance_az | d(aws_zones[0], true) }}"
         node_role: "{{ gpunode.role | d('worker', true) }}"
-        node_owner: "{{ gpunode.requester | d('dpaas', true) }}"
+        node_owner: "{{ gpunode.requester }}"
         machineset_name: "{{ infra_id }}-{{ node_role }}-{{ node_owner }}-{{ aws_region }}{{ aws_az }}"
         node_replica_count: "{{ gpunode.node_count | default('1', true) }}"
         machine_autoscaler_replica_min: 0
@@ -242,7 +256,7 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy gpu machinesets '
       vars:
-        node_owner: "{{ gpunode.requester | d('dpaas', true) }}"
+        node_owner: "{{ gpunode.requester }}"
       command: >
         {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az{{ gpunode.instance_az | d(aws_zones[0], true) }}-gpunode-machineset.yml
       register: gpu_machineset_created
@@ -265,7 +279,7 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy NFD-Worker daemonset '
       vars:
-        node_owner: "{{ gpunode.requester | d('dpaas', true) }}"
+        node_owner: "{{ gpunode.requester }}"
       command: >
         {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/daemonset-nfd-worker.yaml
       register: daemonset_nfdworker_created
@@ -277,7 +291,7 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy gpu machine autoscaler '
       vars:
-        node_owner: "{{ gpunode.requester | d('dpaas', true) }}"
+        node_owner: "{{ gpunode.requester }}"
       command: >
         {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az{{ gpunode.instance_az | d(aws_zones[0], true) }}-gpumachineautoscaler.yml
       register: gpu_machine_autoscaler_created
@@ -398,7 +412,7 @@
       block:
         - name: '{{ ansible_name_module }} | template | Copy gpu sample app pod template to staging location'
           vars:
-            node_taint: "{{ gpunode.taint_key | d('dpaas', true) }}"
+            node_taint: "{{ gpunode.taint_key }}"
             gpu_label: "{{ gpunode.role | d('gpu', true) }}"
           template:
             src: "templates/gpu-sample-pod.yml.j2"

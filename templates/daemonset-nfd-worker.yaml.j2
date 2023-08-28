@@ -132,11 +132,13 @@ spec:
         - operator: Exists
           effect: NoSchedule
         - key: gpu
-          value: dpaas
+          value: {{ gpunode.taint_value }} 
           effect: NoSchedule
+          operator: Equal
         - key: gpu
-          value: dpaas
+          value: {{ gpunode.taint_value }} 
           effect: NoExecute
+          operator: Equal
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
