@@ -1,0 +1,174 @@
+- name: ' Konductor | Provision UPI Infra | harden-cluster-manually-remediate-compliance-operator-findings.yml'
+  hosts: localhost
+  vars:
+    module: "Manually Remediate findings"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      ansible.builtin.import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get compliance scansettings'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} -n openshift-compliance get scansettings.compliance.openshift.io --no-headers | awk '{print $1}'
+      register: compliance_scansettings
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get compliance scansettingbindngs'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} -n openshift-compliance get scansettingbindings.compliance.openshift.io --no-headers | awk '{print $1}'
+      register: compliance_scansettingbindings
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | outdated remediations '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} -n openshift-compliance get complianceremediations.compliance.openshift.io \
+          -l complianceoperator.openshift.io/outdated-remediation= --no-headers | awk '{print $1}'
+      register: outdated_remediations 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} patch | remove outdated remediations '
+      ansible.builtin.command: >
+        {{ openshift_cli }} -n openshift-compliance patch complianceremediations.compliance.openshift.io \
+          {{ item }} --type json -p '[{"op":"remove", "path":/spec/outdated}]'
+      loop: "{{ outdated_remediations.stdout_lines }}"
+      when:
+        - outdated_remediations is defined
+        - outdated_remediations.stdout_lines is defined
+        - outdated_remediations.stdout_lines | length > 0 
+      register: outdated_remediation_removed
+
+#################### Manually rerun scans  #################################
+    - name: '{{ ansible_name_module }} | get machineconfig pools'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get mcp --no-headers | awk '{print $1}' | grep -v ','| sort | uniq
+      register: node_mcps
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} patch | pause mcps '
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec":{"pause": true}}' 
+      loop: "{{ node_mcps.stdout_lines }}"
+      when:
+        - node_mcps is defined
+        - node_mcps.stdout_lines is defined
+        - node_mcps.stdout_lines | length > 0 
+      register: mcp_paused 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get compliance scans'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} -n openshift-compliance get compliancescans.compliance.openshift.io --no-headers | awk '{print $1}'
+      register: compliance_scans
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | annotate scans '
+      ansible.builtin.command: >
+        {{ openshift_cli }} -n openshift-compliance annotate --overwrite compliancescans.compliance.openshift.io {{ item }} 'compliance.openshift.io/rescan='  
+      loop: "{{ compliance_scans.stdout_lines }}"
+      when:
+        - compliance_scans is defined
+        - compliance_scans.stdout_lines is defined
+        - compliance_scans.stdout_lines | length > 0 
+      register: compliance_rescan_enabled
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | remediations '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} -n openshift-compliance get complianceremediations.compliance.openshift.io \
+          --no-headers | awk '{print $1}'
+      register: compliance_remediations 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | disable autoremediation '
+      ansible.builtin.command: >
+        {{ openshift_cli }} -n openshift-compliance patch complianceremediations.compliance.openshift.io {{ item }} --type merge -p '{"spec":{"apply": false}}' 
+      loop: "{{ compliance_remediations.stdout_lines }}"
+      when:
+        - compliance_remediations is defined
+        - compliance_remediations.stdout_lines is defined
+        - compliance_remediations.stdout_lines | length > 0 
+      register: compliance_autoremediation_disabled
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:which | check if oc-compliance is installed '
+      ansible.builtin.command: which oc-compliance 
+      ignore_errors: yes
+      failed_when:
+        - oc_compliance_binary_check.rc > 0
+        - "not 'no oc-compliance' in oc_compliance_binary_check.stderr"
+      register: oc_compliance_binary_check
+
+    - name: '{{ ansible_name_module }} | extract oc compliance command'
+      when:
+        - ( not oc_compliance_binary_check.stdout is defined or oc_compliance_binary_check.stdout == '') or (extract_oc_compliance_binary is defined and extract_oc_compliance_binary | bool) 
+      block:
+        - name: '{{ ansible_name_module }} | podman run | extract oc compliance command'
+          ansible.builtin.set_fact:
+            oc_compliance_scan_binary_dir: "/usr/local/bin"
+          when:
+            - not oc_compliance_scan_binary_dir is defined or oc_compliance_scan_binary_dir == ''
+
+        - name: '{{ ansible_name_module }} | podman run | extract oc compliance command'
+          ansible.builtin.shell: >
+            podman run --authfile {{ registry_auth_config }} --rm --entrypoint /bin/cat \
+             {{ scan_results_export_image }} \
+              /usr/bin/oc-compliance > {{ oc_compliance_scan_binary_dir }}
+          register: scan_results_binary_extracted
+
+        - name: '{{ ansible_name_module }} | file  | set permission on binary'
+          file:
+            path: "{{ oc_compliance_scan_binary_dir }}/oc-compliance"
+            mode: 0755
+
+    - name: '{{ ansible_name_module }} | set_fact | Set the oc_compliance_scan_binary when undefined'
+      ansible.builtin.set_fact:
+        oc_compliance_scan_binary: "{{ oc_compliance_binary_check.stdout if (oc_compliance_binary_check.stdout is defined and oc_compliance_binary_check.stdout != '' ) else (oc_compliance_scan_binary_dir + '/oc-compliance') }}"
+      when:
+        - not oc_compliance_scan_binary is defined or oc_compliance_scan_binary == ''
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ oc_compliance_scan_binary }} rerun-now | rerun scans'
+      ansible.builtin.shell: >
+        {{ oc_compliance_scan_binary }} rerun-now scansettingbindings {{ compliance_scansettingbindings.stdout_lines[-1] }} -n openshift-compliance 
+      register: scan_rerun
+
+################## Patch compliance scan setting to disable auto remidiation  ####################
+    - name: '{{ ansible_name_module }} | Patch ScanSetting to disable auto Remediation'
+      block:
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | patch scansettings 1 of 3'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"autoUpdateRemediations": false}' -n openshift-compliance
+          loop: "{{ compliance_scansettings.stdout_lines }}"
+          when:
+            - compliance_scansettings is defined
+            - compliance_scansettings.stdout_lines is defined
+            - compliance_scansettings.stdout_lines | length > 0
+          register: compliance_scansettings_patched_autoupdate_disabled
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | patch scansettings 2 of 3'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"autoApplyRemediations": false}' -n openshift-compliance
+          loop: "{{ compliance_scansettings.stdout_lines }}"
+          when:
+            - compliance_scansettings is defined
+            - compliance_scansettings.stdout_lines is defined
+            - compliance_scansettings.stdout_lines | length > 0
+          register: compliance_scansettings_patched_autoapply_disabled
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | patch scansettings 3 of 3'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"suspend": true}' -n openshift-compliance
+          loop: "{{ compliance_scansettings.stdout_lines }}"
+          when:
+            - compliance_scansettings is defined
+            - compliance_scansettings.stdout_lines is defined
+            - compliance_scansettings.stdout_lines | length > 0
+          register: compliance_scansettings_patched_suspend_applied
+
+################## unpause MCPs  ####################
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} patch | pause mcps '
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec":{"pause": false}}' 
+      loop: "{{ node_mcps.stdout_lines }}"
+      when:
+        - node_mcps is defined
+        - node_mcps.stdout_lines is defined
+        - node_mcps.stdout_lines | length > 0 
+      register: mcp_unpaused 
+

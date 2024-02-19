@@ -20,14 +20,14 @@
         - configure_compliance_scan | bool
       block:
         - name: '{{ ansible_name_module }} | get moderate profile if platform_node_profile_name not provided'
-          shell: >
+          ansible.builtin.shell: >
             {{ openshift_cli }} get profiles.compliance.openshift.io --no-headers | grep -i "moderate" | awk '{print $1}' | sort
           when:
             - not platform_node_profile_name is defined or platform_node_profile_name == ''
           register: default_profiles
 
         - name: '{{ ansible_name_module }} | set_fact | default scan profile vars'
-          set_fact:
+          ansible.builtin.set_fact:
             platform_node_profile_name: "{{ default_profiles.stdout_lines[1] }}"
             platform_profile_name: "{{ default_profiles.stdout_lines[0] }}"
             compliance_profile_name: "nist-moderate"
@@ -38,33 +38,33 @@
             - default_profiles.stdout_lines | length > 0
 
         - name: '{{ ansible_name_module }} | | get storage class if not provided'
-          shell: >
+          ansible.builtin.shell: >
             {{ openshift_cli }} get storageclass --no-headers | grep -i "{{ storage_class_type | d('kubernetes.io/aws-ebs') }}" | awk '{print $1}'
           register: default_sc
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render default ScanSetting CR'
-          template:
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | Render default ScanSetting CR'
+          ansible.builtin.template:
             src: "templates/scansetting-cr.yaml.j2"
             dest: "{{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml"
             force: yes
           vars:
             cluster_storage_class: "{{ default_sc.stdout }}"
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting '
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | default scan setting '
+          ansible.builtin.command: >
             {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansetting-cr.yaml -n openshift-compliance
           register: scansetting_applied
 
         - name: '{{ ansible_name_module }} | get moderate profile if platform_node_profile_name not provided'
-          shell: >
+          ansible.builtin.shell: >
             {{ openshift_cli }} get profiles.compliance.openshift.io -n openshift-compliance --no-headers | grep -i "moderate" | grep -i "rhcos" | awk '{print $1}' | sort
           register: rhcos_profiles
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render RHCOS ScanSettingBinding CR'
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | Render RHCOS ScanSettingBinding CR'
           vars:
             profile: "{{ rhcos_profiles.stdout_lines[0] }}"
             compliance_name: "{{ 'nist-' + rhcos_profiles.stdout_lines[0] }}"
-          template:
+          ansible.builtin.template:
             src: "templates/scansettingbinding-cr.yaml.j2"
             dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ rhcos_profiles.stdout_lines[0] }}.yaml"
             force: yes
@@ -76,15 +76,15 @@
             - rhcos_profiles.stdout_lines | length > 0
 
         - name: '{{ ansible_name_module }} | get moderate profile if platform_node_profile_name not provided'
-          shell: >
+          ansible.builtin.shell: >
             {{ openshift_cli }} get profiles.compliance.openshift.io -n openshift-compliance --no-headers | grep -i "moderate" | grep -vi "rhcos" | awk '{print $1}' | sort
           register: ocp_profiles
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render OCP ScanSettingBinding CR'
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | Render OCP ScanSettingBinding CR'
           vars:
             profiles: "{{ ocp_profiles.stdout_lines }}"
             compliance_name: "{{ 'nist-' + ocp_profiles.stdout_lines[0] }}"
-          template:
+          ansible.builtin.template:
             src: "templates/scansettingbinding-cr.yaml.j2"
             dest: "{{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ ocp_profiles.stdout_lines[0] }}.yaml"
             force: yes
@@ -95,8 +95,8 @@
             - ocp_profiles.stdout_lines is defined
             - ocp_profiles.stdout_lines | length > 0
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | default scan setting binding'
+          ansible.builtin.command: >
             {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ rhcos_profiles.stdout_lines[0] }}.yaml -n openshift-compliance
           when:
             - rhcos_profiles is defined
@@ -106,8 +106,8 @@
             - rhcos_profiles.stdout_lines | length > 0
           register: rhcos_scansetting_applied
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | default scan setting binding'
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | default scan setting binding'
+          ansible.builtin.command: >
             {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/scansettingbinding-cr-{{ ocp_profiles.stdout_lines[0] }}.yaml -n openshift-compliance
           when:
             - ocp_profiles is defined
@@ -117,13 +117,13 @@
             - ocp_profiles.stdout_lines | length > 0
           register: ocp_scansetting_applied
 
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get automatable findings results'
-      shell: >
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get automatable findings results'
+      ansible.builtin.shell: >
         {{ openshift_cli }} get compliancecheckresults -l 'compliance.openshift.io/check-status in (FAIL),compliance.openshift.io/automated-remediation' -n openshift-compliance --no-headers | awk '{print $1}'
       register: compliance_findings_automatable
 
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get manual findings '
-      shell: >
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get manual findings '
+      ansible.builtin.shell: >
         {{ openshift_cli }} get compliancecheckresults -l 'compliance.openshift.io/check-status in (FAIL),!compliance.openshift.io/automated-remediation' -n openshift-compliance --no-headers | awk '{print $1}'
       register: compliance_findings_manual
 
@@ -133,13 +133,13 @@
         - remediate_compliance_scan is defined
         - remediate_compliance_scan | bool
       block:
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get automatable remediations'
-          shell: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get automatable remediations'
+          ansible.builtin.shell: >
             {{ openshift_cli }} get complianceremediations.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
           register: compliance_findings_remediations
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | apply automatable findings '
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | apply automatable findings '
+          ansible.builtin.command: >
             {{ openshift_cli }} patch complianceremediations.compliance.openshift.io {{ item }} --type merge -p '{"spec":{"apply": true}}' -n openshift-compliance
           loop: "{{ compliance_findings_remediations.stdout_lines }}"
           when:
@@ -154,13 +154,13 @@
         - enable_compliance_rescan is defined
         - enable_compliance_rescan | bool
       block:
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get compliance scans'
-          shell: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get compliance scans'
+          ansible.builtin.shell: >
             {{ openshift_cli }} get compliancescans.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
           register: compliance_scans
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | annotate scans '
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | annotate scans '
+          ansible.builtin.command: >
             {{ openshift_cli }} annotate compliancescans.compliance.openshift.io {{ item }} compliance.openshift.io/rescan= -n openshift-compliance 
           loop: "{{ compliance_scans.stdout_lines }}"
           when:
@@ -175,13 +175,13 @@
         - enable_auto_remediate is defined
         - enable_auto_remediate | bool
       block:
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | get compliance scans'
-          shell: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get compliance scans'
+          ansible.builtin.shell: >
             {{ openshift_cli }} get scansettings.compliance.openshift.io -n openshift-compliance --no-headers | awk '{print $1}'
           register: compliance_scansettings
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | patch scansettings 1 of 2'
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | patch scansettings 1 of 2'
+          ansible.builtin.command: >
             {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"autoUpdateRemediations": true}' -n openshift-compliance
           loop: "{{ compliance_scansettings.stdout_lines }}"
           when:
@@ -190,8 +190,8 @@
             - compliance_scansettings.stdout_lines | length > 0
           register: compliance_scansettings_patched_autoupdate
 
-        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | patch scansettings 2 of 2'
-          command: >
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | patch scansettings 2 of 2'
+          ansible.builtin.command: >
             {{ openshift_cli }} patch scansettings.compliance.openshift.io {{ item }} --type merge -p '{"autoApplyRemediations": true}' -n openshift-compliance
           loop: "{{ compliance_scansettings.stdout_lines }}"
           when:
@@ -199,4 +199,7 @@
             - compliance_scansettings.stdout_lines is defined
             - compliance_scansettings.stdout_lines | length > 0
           register: compliance_scansettings_patched_autoapply
+
+- name: Include the compliance manual remediation playbook
+  ansible.builtin.import_playbook: harden-cluster-manually-remediate-compliance-operator-findings.yml
 
