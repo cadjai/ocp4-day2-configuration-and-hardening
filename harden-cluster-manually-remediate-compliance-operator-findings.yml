@@ -48,7 +48,7 @@
 
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} patch | pause mcps '
       ansible.builtin.command: >
-        {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec":{"pause": true}}' 
+        {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec":{"paused": true}}' 
       loop: "{{ node_mcps.stdout_lines }}"
       when:
         - node_mcps is defined
@@ -113,7 +113,7 @@
           register: scan_results_binary_extracted
 
         - name: '{{ ansible_name_module }} | file  | set permission on binary'
-          file:
+          ansible.builtin.file:
             path: "{{ oc_compliance_scan_binary_dir }}/oc-compliance"
             mode: 0755
 
@@ -164,7 +164,7 @@
 ################## unpause MCPs  ####################
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} patch | pause mcps '
       ansible.builtin.command: >
-        {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec":{"pause": false}}' 
+        {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec":{"paused": false}}' 
       loop: "{{ node_mcps.stdout_lines }}"
       when:
         - node_mcps is defined

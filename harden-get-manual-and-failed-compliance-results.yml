@@ -1,0 +1,110 @@
+- name: ' Konductor | Provision UPI Infra | harden-get-manual-and-failed-compliance-results.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Find Failed and manual Remediatiation Rules"
+    ansible_name_module: " Post Cluster Installation | Harden Cluster | {{ module }}"
+    chk_results_default_filter_prefix: "compliance.openshift.io/suite in (disa-ocp4-stig,disa-ocp4-stig-node),"
+    chk_results_failed_filter: "compliance.openshift.io/check-status in (FAIL,MANUAL),compliance.openshift.io/check-severity in (high,medium)"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | import_role | OCP cluster login'
+      import_role:
+        name: ocp-cluster-login
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve Cluster Name'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_name
+
+    - name: '{{ ansible_name_module }} | load  cve_file if it exsists'
+      ansible.builtin.set_fact:
+        unremediated_rule_merged_csv_result_file: "/tmp/unremediated-{{ cluster_name.stdout }}-controls-data-results-{{ lookup('pipe', 'date +%Y%m%d') }}.csv"
+      when:
+        - unremediated_rule_merged_csv_result_file is undefined or unremediated_rule_merged_csv_result_file == ''
+
+    ### If necesary provide the profile to filter by to avoid duplicates (e.g. compliance.openshift.io/suite in (disa-ocp4-stig,disa-ocp4-stig-node),
+    ### or compliance.openshift.io/scan-name in (ocp4-stig,ocp4-stig-node-master,ocp4-stig-node-worker), 
+    - name: '{{ ansible_name_module }} | set profile filter string'
+      ansible.builtin.set_fact:
+        chk_results_filter: "{{ (profile_filter + chk_results_default_filter) if (profile_filter is defined and profile_filter != '') else (chk_results_default_filter_prefix + chk_results_failed_filter) }}"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get manual and failed findings '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get compliancecheckresults -l '{{ chk_results_filter }} ' -n openshift-compliance --no-headers | awk '{print $1}'
+      register: compliance_findings_manual_names
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get manual and failed findings count'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get compliancecheckresults -l '{{ chk_results_filter }} ' -n openshift-compliance --no-headers | awk '{print $1}' | wc -l
+      register: compliance_findings_manual_count
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get manual and failed findings '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get compliancecheckresults -l '{{ chk_results_filter }}' -n openshift-compliance --no-headers -ocustom-columns=name:.metadata.name,id:.id,status:.status,severity:.severity 
+      register: compliance_findings_manual
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | format unremediated findings '
+      ansible.builtin.set_fact:
+        unremediated_json: '{{ unremediated_json | default([]) + [{"name":item.split()[0], "id":item.split()[1], "status":item.split()[2], "severity":item.split()[3] }] }} '
+      loop: "{{ compliance_findings_manual.stdout_lines }}"
+      loop_control:
+        index_var: idx
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | unremediated findings names'
+      ansible.builtin.set_fact:
+        unremediated_rule_name: "{{ unremediated_json | map(attribute='name') | list }}"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get manual findings description'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get compliancecheckresults {{ item }} -o=jsonpath='{.description}' -n openshift-compliance --no-headers 
+      loop: "{{ unremediated_rule_name }}"
+      register: compliance_findings_manual_description
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | get manual findings instructions'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get compliancecheckresults {{ item }} -o=jsonpath='{.instructions}' -n openshift-compliance --no-headers
+      loop: "{{ unremediated_rule_name }}"
+      register: compliance_findings_manual_instructions
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | unremediated rule instructions'
+      ansible.builtin.set_fact:
+        unremediated_rule_instruction_data: "{{ unremediated_rule_instruction_data | default([]) + [{'name':item.item, 'instructions':item.stdout}] }}"
+      loop: "{{ compliance_findings_manual_instructions.results }}"
+      register: unremediated_rule_instruction_data_facts
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | unremediated rule description'
+      ansible.builtin.set_fact:
+        unremediated_rule_description_data: "{{ unremediated_rule_description_data | default([]) + [{'name':item.item, 'description':item.stdout}] }}"
+      loop: "{{ compliance_findings_manual_description.results }}"
+      register: unremediated_rule_description_data_facts
+      
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | unremediated rule description'
+      ansible.builtin.set_fact:
+        unremediated_rule_merged: "{{ [unremediated_json, unremediated_rule_instruction_data, unremediated_rule_description_data] | community.general.lists_mergeby('name', recursive=true, list_merge='append')}}"
+      register: unremediated_rule_merged_facts
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} | unremediated rule description'
+      ansible.builtin.set_fact:
+        unremediated_rule_merged_csv: "{{ unremediated_rule_merged_csv | default([]) \
+                                      + [item.name + ',' \
+                                      + item.id  + ',' \
+                                      + item.severity  + ',' \
+                                      + item.status  + ',' \
+                                      + item.description | replace(',',' ') | replace('\n',' ') | replace('\\t',' ') | replace('[','') | replace(']','') | replace('\"','') + ','  \
+                                                                                                                                                                    + item.instructions  | replace(',',' ') | replace('\n',' ') | replace('\\t',' ') | replace('[','') | replace(']','') | replace('\"','')
+                                     ] }}"
+      loop: "{{ unremediated_rule_merged }}"
+      register: unremediated_rule_merged_csv_facts
+
+    - name: '{{ ansible_name_module }} | convert to csv '
+      ansible.builtin.template:
+        src: "templates/ocp-controls-data-csv.j2"
+        dest: "{{ unremediated_rule_merged_csv_result_file }}"
+      register: unremediated_rule_merged_csv_tsv
+
