@@ -1,22 +1,40 @@
 apiVersion: compliance.openshift.io/v1alpha1
 kind: ScanSetting
 metadata:
-  name: "{{ compliance_profile_name | default('cis-compliance') }}-auto-apply" 
+  name: "{{ compliance_profile_name | default('cis-compliance') }}"
   namespace: openshift-compliance
 autoUpdateRemediations: {{ auto_create_remediation | default('true') }} 
 autoApplyRemediations: {{ auto_apply_remediate | default('true') }} 
 rawResultStorage:
-  storageClassName: {{ cluster_storage_class }}
+  nodeSelector:
+    node-role.kubernetes.io/master: "" 
+  storageClassName: {{ cluster_storage_class }} 
   pvAccessModes:
     - ReadWriteOnce
   rotation: 3
   size: {{ scan_pvc_size | default('1Gi') }}
-schedule: {{ compliance_scan_schedule | default('0 1 * * *') }}
+  tolerations:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+    operator: Exists
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoSchedule
+    key: node.kubernetes.io/memory-pressure
+    operator: Exists
 roles:
-- worker
-- master
+  - worker
+  - master
 scanTolerations:
-- effect: NoSchedule
-  key: node-role.kubernetes.io/master
-  operator: Exists
-
+  - operator: Exists
+schedule: {{ compliance_scan_schedule | default('0 1 * * *') }}
+showNotApplicable: false
+strictNodeScan: true
+suspend: true
+timeout: 30m
