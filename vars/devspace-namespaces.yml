@@ -1,0 +1,31 @@
+---
+namespace_type: 'devspaces'
+namespace_env: 'dev'
+devspaces:
+  namespace_name: 'devspaces'
+  projects:
+    developer1:
+      display_name: 'develper 1 devspace namespace'
+      description: 'develper 1 devspace namespace'
+      name: 'developer1'
+      username: 'devloper1'
+      add_container_build_scc: 'true'
+    developer2:
+      display_name: 'develper 2 devspace namespace'
+      description: 'develper 2 devspace namespace'
+      name: 'developer2'
+      username: 'devloper2'
+      add_container_build_scc: 'false'
+    cadjai:
+      display_name: 'cadjai devspace namespace'
+      description: 'cadjai devspace namespace'
+      name: 'cadjai-devspace'
+      username: 'cadjai'
+      add_container_build_scc: 'true'
+    claude:
+      display_name: 'claude devspace namespace'
+      description: 'claude devspace namespace'
+      name: 'claude-devspace'
+      username: 'claude'
+      add_container_build_scc: 'true'
+
