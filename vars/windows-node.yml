@@ -3,6 +3,8 @@
 # Windows Node  Variables
 ##################################
 
+wnco_cidr: '10.128.0.0/14'
+wnco_host_prefix: '23'
 ssh_key_secret: 'cloud-private-key'
 ssh_key_name: 'id_rsa_windows'
 ssh_key_dir: '/tmp/windows/ssh'
@@ -30,6 +32,17 @@ windowsnode:
   taint_value: 'Windows'  ### The value use for the taint applied to the node (e.g. reserved)
   env: 'aide-ide'
 
+wmcoperator:
+  name: 'windows-machine-config-operator'
+  group_name: 'windows-machine-config-operator-group'
+  catalog_name: 'custom-windows-machine-config-operator'
+  sub_channel: 'stable'
+  deploy_namespace: 'openshift-windows-machine-config-operator'
+  target_namespace: 'openshift-windows-machine-config-operator' 
+  deploy_namespace_description: 'openshift-windows-machine-config-operator'
+  patch_namespace: 'true'
+  patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+  index_image: 'windows-machine-config-operator-index'
 
 #################################
 # End Windows Node Variables
