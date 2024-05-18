@@ -44,6 +44,8 @@ wmcoperator:
   patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
   index_image: 'windows-machine-config-operator-index'
 
+admin_user_pwd: ''
+
 #################################
 # End Windows Node Variables
 ##################################
