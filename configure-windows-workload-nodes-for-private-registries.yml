@@ -22,7 +22,7 @@
           - requests 
 
     - name: Authenticate with the API
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} login \
           -u {{ ocp_cluster_user }} \
           -p {{ ocp_cluster_user_password }} \
@@ -31,6 +31,6 @@
 
   tasks:
     - name: Import windows node provisioning task book
-      import_role:
+      ansible.builtin.import_role:
         name: add-and-config-infranodes
         tasks_from: configure-windows-nodes-for-private-registry.yml 
