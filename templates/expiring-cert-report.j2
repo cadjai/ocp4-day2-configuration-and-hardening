@@ -1,0 +1,5 @@
+Expiring Certificate within 30days
+CERT_FILE,CERT_EXPIRATION,CERT_CN
+{% for expcert in expiring_cert_list %}
+{{ expcert.cert }},{{ expcert.expiration }},{{ expcert.dn }}
+{% endfor %}

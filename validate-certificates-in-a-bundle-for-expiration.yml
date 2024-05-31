@@ -1,0 +1,166 @@
+- name: ' Configure Cluster Update Service  | validate-certificates-in-a-bundle-for-expiration.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Validate custom certs within CA Bundle"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: '{{ ansible_name_module }} | command:which | Check if csplit is installed'
+      ansible.builtin.shell: >
+        which csplit
+      ignore_errors: yes
+      register: csplit_binary
+
+    - name: '{{ ansible_name_module }} | assert | csplit is installed'
+      ansible.builtin.assert:
+        that:
+          - csplit_binary is defined
+          - csplit_binary.rc is defined
+          - csplit_binary.rc == 0
+          - csplit_binary.stdout is defined
+          - csplit_binary.stdout != ''
+        msg: "The csplit package is required before running this"
+
+    - name: '{{ ansible_name_module }} | command:which | Check if openssl is installed'
+      ansible.builtin.shell: >
+        which openssl
+      ignore_errors: yes
+      register: openssl_binary
+
+    - name: '{{ ansible_name_module }} | assert | openssl is installed'
+      ansible.builtin.assert:
+        that:
+          - openssl_binary is defined
+          - openssl_binary.rc is defined
+          - openssl_binary.rc == 0
+          - openssl_binary.stdout is defined
+          - openssl_binary.stdout != ''
+        msg: "The openssl package is required before running this"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | file:directory | Ensure the staging directory exist'
+      become: yes
+      ansible.builtin.file:
+        path: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}"
+        state: directory
+        mode: 0777
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} Retrieve cluster CA Bundle'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} extract cm/{{ cluster_ca_bundle_cm | default('user-ca-bundle', true) }} \
+          -n openshift-config --to {{ staging_dir | d('/tmp/ca-bundle-validation', true) }} \
+           --confirm
+      ignore_errors: yes
+      failed_when:
+        - cluster_cabundle_retrieved.rc >= 1
+        - not 'file exists' in cluster_cabundle_retrieved.stderr
+      register: cluster_cabundle_retrieved
+
+    - name: '{{ ansible_name_module }} | shell | Split CA Bundle into separate cert for validateion '
+      ansible.builtin.shell: >
+        {{ csplit_binary.stdout }} -z -s -f {{ staging_dir | d('/tmp/ca-bundle-validation', true) }}/cert- \
+        {{ staging_dir | d('/tmp/ca-bundle-validation', true) }}/{{ cluster_cabundle_name | default('ca-bundle.crt', true) }} \
+        '/-----BEGIN CERTIFICATE-----/' '{*}'
+      register: cluster_cabundle_splitted
+
+    - name: '{{ ansible_name_module }} | find |  Find all cert files to validate'
+      ansible.builtin.find:
+        path: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}"
+        recurse: yes
+        patterns: 'cert-*'
+      register: certs_to_validate
+
+    - name: '{{ ansible_name_module }} | set_fact | cert file paths'
+      ansible.builtin.set_fact:
+        cert_file_paths: "{{ certs_to_validate.files | map(attribute='path') | list }}"
+      when:
+        - certs_to_validate is defined
+        - certs_to_validate.files is defined
+        - certs_to_validate.files | length > 0
+
+    - name: '{{ ansible_name_module }} | shell }} | Get Cert Common Name'
+      ansible.builtin.shell: >
+        {{ openssl_binary.stdout }} x509 -subject -noout -in {{ item }}
+      loop: "{{ cert_file_paths }}"
+      ignore_errors: true
+      when:
+        - cert_file_paths is defined
+        - cert_file_paths | length > 0
+      register: certs_dn
+
+    - name: '{{ ansible_name_module }} | debug | Print cert DN output'
+      debug:
+        var: item
+        verbosity: 2
+      loop: "{{ certs_dn.results }}"
+
+    - name: '{{ ansible_name_module }} | shell }} | Get Cert Expiration Date'
+      ansible.builtin.shell: >
+        {{ openssl_binary.stdout }} x509 -enddate -noout -in {{ item }}
+      loop: "{{ cert_file_paths }}"
+      ignore_errors: true
+      when:
+        - cert_file_paths is defined
+        - cert_file_paths | length > 0
+      register: certs_enddate
+
+    - name: '{{ ansible_name_module }} | shell | Check if cert will expire n 30 days'
+      ansible.builtin.shell: >
+        {{ openssl_binary.stdout }} x509 -checkend {{ cert_expiration_time | d('2592000', true) }} -noout -in {{ item }}
+      loop: "{{ cert_file_paths }}"
+      ignore_errors: true
+      when:
+        - cert_file_paths is defined
+        - cert_file_paths | length > 0
+      register: certs_enddate_validation
+
+    - name: '{{ ansible_name_module }} | debug | Print cert validation output'
+      debug:
+        var: item
+        verbosity: 2
+      loop: "{{ certs_enddate_validation.results }}"
+
+    - name: '{{ ansible_name_module }} | set_fact | expiring cert list'
+      ansible.builtin.set_fact:
+        expiring_cert_list: "{{ expiring_cert_list | d([], true) + [{'cert': item.item, 'expiration': certs_enddate.results[key_cnt].stdout.split('notAfter=')[1], 'dn': certs_dn.results[key_cnt].stdout.split('CN = ')[1]}] }}"
+      loop: "{{ certs_enddate_validation.results }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item.rc is defined
+        - item.rc > 0
+        - item.stdout is defined
+        - item.stdout != ''
+        - " 'Certificate will expire' in item.stdout"
+        - item.item is defined
+
+    - name: '{{ ansible_name_module }} | debug | Print expiring cert list output'
+      debug:
+        var: item
+        verbosity: 2
+      loop: "{{ expiring_cert_list }}"
+
+    - name: '{{ ansible_name_module }} | template | Generate expiring cert CSV file'
+      ansible.builtin.template:
+        src: "templates/expiring-cert-report.j2"
+        dest: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}/expiring-certs-{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M')}}.csv"
+        force: yes
+      when:
+        - expiring_cert_list is defined
+        - expiring_cert_list | length > 0
+
