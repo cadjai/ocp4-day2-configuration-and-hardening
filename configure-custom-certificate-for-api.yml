@@ -134,7 +134,29 @@
               become: yes
               shell: >
                 cat {{ kubeconfig_file }} | grep certificate-authority-data | awk '{print $2}' | base64 -d > {{ original_ca_file | default('/tmp/ca-bundle-orig.crt', true) }}
+              when:
+                - use_ca_from_kubeconfig is defined
+                - use_ca_from_kubeconfig | bool 
               register: kubeconfig_ca_data_file
+
+            - name: '{{ ansible_name_module }} | config custom Cert API | Extract original kubeconfig CA from cluster Save'
+              when:
+                - not use_ca_from_kubeconfig is defined or not use_ca_from_kubeconfig | bool
+              block:
+                - name: '{{ ansible_name_module }} | file | extraction folder exist '
+                  ansible.builtin.file:
+                    path: "{{ extracted_kca_file_dir | default('/tmp/kubeconfig-ca', true) }}"
+                    state: directory
+                    mode: '0755'
+
+                - name: '{{ ansible_name_module }} | config custom CA kubeconfig | get admin-kubeconfig-client-ca from  cm'
+                  shell: >
+                    {{ openshift_cli }} extract cm/admin-kubeconfig-client-ca -n openshift-config --to={{ extracted_kca_file_dir | default('/tmp/kubeconfig-ca', true) }} --confirm=true
+                  ignore_errors: true
+                  register: kubeconfig_ca_data_orig_file
+                - name: '{{ ansible_name_module }} | Set ca cert bundle extraction dir'
+                  ansible.builtin.set_fact:
+                    original_ca_file: "{{ extracted_kca_file_dir | default('/tmp/kubeconfig-ca', true) }}/ca-bundle.crt"
 
             - name: '{{ ansible_name_module }} | config custom CA kubeconfig | get custom ca data from cm'
               shell: >
