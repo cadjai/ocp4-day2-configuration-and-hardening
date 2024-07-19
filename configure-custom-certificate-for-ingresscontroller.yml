@@ -79,6 +79,7 @@
                 fqdn: 'ca-bundle.crt'
                 port: ''
                 ca_file_pem: '{{ custom_ca_bundle_file }}'
+            ca_bundle_cm_name: '{{ ingress_ca_cm_name }}'
 
     - name: '{{ ansible_name_module }} Check Custom Ingress controller Certificate files'
       block:
@@ -148,10 +149,7 @@
             - ingress_cert_key_file_exist is defined
             - ingress_cert_key_file_exist.stat is defined
 
-
-        - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
-          command: >
-            {{ openshift_cli }} create configmap "{{ ingress_ca_cm_name }}-bundle" -n openshift-config
+        - name: '{{ ansible_name_module }} | Configure Custom CA for auto CA injection'
           when:
             - ingress_cert_file_exist is defined
             - ingress_cert_file_exist.stat is defined
@@ -159,15 +157,16 @@
             - ingress_cert_file_exist.stat.isreg | bool
             - ingress_cert_key_file_exist is defined
             - ingress_cert_key_file_exist.stat is defined
+            - ingress_ca_cm_name is defined
+            - ingress_ca_cm_name != ''
+            - ca_bundle_cm_created is defined
+            - ca_bundle_cm_created.rc is defined
+            - ca_bundle_cm_created.rc == 0
+          block:
+            - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
+              command: >
+                {{ openshift_cli }} create configmap "{{ ingress_ca_cm_name }}-bundle" -n openshift-config
 
-        - name: '{{ ansible_name_module }} | Add label to empty ConfigMap created above to use as CA injection CM'
-          command: >
-            {{ openshift_cli }} label configmap "{{ ingress_ca_cm_name }}-bundle" config.openshift.io/inject-trusted-cabundle=true -n openshift-config
-          when:
-            - ingress_cert_file_exist is defined
-            - ingress_cert_file_exist.stat is defined
-            - ingress_cert_file_exist.stat.isreg is defined
-            - ingress_cert_file_exist.stat.isreg | bool
-            - ingress_cert_key_file_exist is defined
-            - ingress_cert_key_file_exist.stat is defined
-
+            - name: '{{ ansible_name_module }} | Add label to empty ConfigMap created above to use as CA injection CM'
+              command: >
+                {{ openshift_cli }} label configmap "{{ ingress_ca_cm_name }}-bundle" config.openshift.io/inject-trusted-cabundle=true -n openshift-config
