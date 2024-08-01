@@ -1,0 +1,271 @@
+- name: ' Configure Trident Storage  | configure-trident-for-persistence.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Configure Trident for persistence"
+    ansible_name_module: " Post Cluster Installation | Configure Trident Driver | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+ 
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - trident_binary_file is defined and trident_binary_file != ''
+            msg: " the Trident driver archive location on the controller node is required and non empty"
+          when:
+            - not trident_remote_url is defined or trident_remote_url == ''
+        - assert:
+            that:
+              - trident_remote_url is defined and trident_remote_url != ''
+            msg: " the Trident driver archive remote URL location is required and non empty with its protocol (e.g. http)"
+          when:
+            - not trident_binary_file is defined or trident_binary_file == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Download Trident Driver if applicable'
+      when:
+        - trident_remote_url is defined
+        - trident_remote_url != '' 
+      block:
+        - name: '{{ ansible_name_module }} | Download Trident binary'
+          get_url:
+            url: "{{ trident_remote_url }}"
+            dest: "{{ trident_binary_file }}"
+            username: "{{ vault_registry_admin_username }}"
+            password: "{{ vault_registry_admin_password }}"
+            force_basic_auth: true
+          when:
+            - use_basic_auth is defined
+            - use_basic_auth | bool 
+
+        - name: '{{ ansible_name_module }} | Download Trident binary'
+          get_url:
+            url: "{{ trident_remote_url }}"
+            dest: "{{ trident_binary_file }}"
+          when:
+            - not use_basic_auth is defined or not use_basic_auth | bool 
+
+    - name: '{{ ansible_name_module }} | stat | Check if trident driver archive file exist'
+      ansible.builtin.stat:
+        path: "{{ trident_binary_file }}"
+        get_checksum: false
+      register: trident_driver_archive_file_exist
+
+    - assert:
+        that:
+          - trident_driver_archive_file_exist.stat is defined 
+          - trident_driver_archive_file_exist.stat.exists is defined 
+          - trident_driver_archive_file_exist.stat.exists | bool 
+          - trident_driver_archive_file_exist.stat.path is defined 
+        msg: " the Trident Driver archive has to be a valid file on the controler"
+
+    - name: '{{ ansible_name_module }} | file:directory | Ensure the staging directory exist'
+      ansible.builtin.file:
+        path: "{{ staging_dir | default('/tmp/trident',true) }}"
+        state: directory
+        mode: 0755
+
+    - name: '{{ ansible_name_module }} | Unpack Trident binary'
+      unarchive:
+        src: "{{ trident_binary_file }}"
+        dest: "{{ staging_dir | default('/tmp/trident',true) }}"
+      register: trident_driver_extracted
+
+    - name: '{{ ansible_name_module }} | Print bundle Unpack output'
+      debug:
+        var: trident_driver_extracted
+        verbosity: 2
+
+    - ansible.builtin.set_fact:
+        deploy_dir: "{{ trident_driver_extracted.dest }}/trident-installer/deploy"
+        crd_dir: "{{ trident_driver_extracted.dest }}/trident-installer/deploy/crds"
+        helm_dir: "{{ trident_driver_extracted.dest }}/trident-installer/deploy/helm"
+        bundle_file: "{{ trident_driver_extracted.dest }}/trident-installer/deploy/bundle_post_1_25.yaml"
+        clusterrole_file: "{{ trident_driver_extracted.dest }}/trident-installer/deploy/clusterrole_post_1_25.yaml"
+        orchestrator_file: "{{ trident_driver_extracted.dest }}/trident-installer/deploy/crds/trident.netapp.io_tridentorchestrators_crd.yaml"
+        kustomization_file: "{{ trident_driver_extracted.dest }}/trident-installer/deploy/kustomization_post_1_25.yaml"
+      when:
+        - trident_driver_extracted is defined
+        - trident_driver_extracted.dest is defined
+        - trident_driver_extracted.dest != '' 
+        - trident_driver_extracted.extract_results.rc is defined
+        - trident_driver_extracted.extract_results.rc == 0 
+
+    - name: '{{ ansible_name_module }} | Deploy Trident CSI driver using OC binary'
+      when:
+        - not use_helm is defined or not use_helm | bool
+      block:
+        - name: '{{ ansible_name_module }} | replace | update image file location in operator manifest'
+          ansible.builtin.replace:
+            path: "{{ deploy_dir }}/operator.yaml"
+            regexp: 'netapp/trident-operator'
+            replace: '{{ registry_host_fqdn }}/{{ local_repository }}/netapp/trident-operator'
+
+        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator manifest'
+          ansible.builtin.replace:
+            path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_customimage.yaml"
+            regexp: 'localhost:5000/netapp/trident-operator'
+            replace: '{{ registry_host_fqdn }}/{{ local_repository }}/netapp/trident-operator'
+
+        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator pull secret manifest 1 of 2'
+          ansible.builtin.replace:
+            path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_imagepullsecrets.yaml"
+            regexp: 'netapp/trident'
+            replace: '{{ registry_host_fqdn }}/{{ local_repository }}/netapp/trident'
+
+        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator pull secret manifest 2 of 2'
+          ansible.builtin.replace:
+            path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_imagepullsecrets.yaml"
+            regexp: 'thisisasecret'
+            replace: '{{ registry_pullsecret }}'
+
+        - name: '{{ ansible_name_module }} | insert | update image file location in orchestrator manifest 1 of 3'
+          ansible.builtin.lineinfile:
+            dest: "{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml"
+            insertbefore: '^namespace:'
+            line: 'imageRegistry: {{ registry_host_fqdn }}/{{ local_repository }}/{{ trident_sig_repo }}'
+          vars:
+            trident_sig_repo: "sig-storage"
+
+        - name: '{{ ansible_name_module }} | insert | update image file location in orchestrator manifest 2 of 3'
+          ansible.builtin.lineinfile:
+            dest: "{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml"
+            insertbefore: '^Debug:'
+            line: 'autosupportImage: {{ registry_host_fqdn }}/{{ local_repository }}/{{ trident_image_repo }}/{{ trident_autosupport_image_tag }}'
+          vars:
+            trident_image_repo: "netapp"
+            trident_autosupport_image_tag: "trident-autosupport:24.06.0"
+
+        - name: '{{ ansible_name_module }} | insert | update image file location in orchestrator manifest 3 of 3'
+          ansible.builtin.lineinfile:
+            dest: "{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml"
+            insertafter: '^namespace:'
+            line: 'tridentImage: {{ registry_host_fqdn }}/{{ local_repository }}/{{ trident_image_repo }}/{{ trident_image_tag }}'
+          vars:
+            trident_image_repo: "netapp"
+            trident_image_tag: "trident:24.06.0"
+
+        - name: '{{ ansible_name_module }} | Create Operator Namespace'
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f '{{ deploy_dir }}/namespace.yaml'
+          failed_when: "trident_operator_ns_created.rc >=1 and not ' already exists' in trident_operator_ns_created.stderr"
+          register: trident_operator_ns_created 
+
+        - name: '{{ ansible_name_module }} | Configure default pullsecret for trident'
+          when:
+            - not registry_pullsecret is defined or registry_pullsecret == ''
+          block:
+            - name: '{{ ansible_name_module }} | Get Existing pull secret secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} get secret pull-secret -n openshift-config
+              ignore_errors: yes
+              register: pull_secret_exist
+
+            - name: '{{ ansible_name_module }} | '
+              when:
+                - pull_secret_exist.rc is defined
+                - pull_secret_exist.rc == 0
+                - pull_secret_exist.stdout is defined
+                - pull_secret_exist.stdout != '' 
+              block:
+                - name: '{{ ansible_name_module }} | command | Extract existing pull secret file'
+                  ansible.builtin.command: >
+                    {{ openshift_cli }} extract secret/pull-secret -n openshift-config --to={{ staging_dir | default('/tmp/trident',true) }}
+                  register: pull_secret_extracted
+
+                - name: '{{ ansible_name_module }} | command | Create pull secret in trient namespace'
+                  ansible.builtin.command: >
+                    {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/trident',true) }}/.dockerconfigjson -n trident
+                  register: pull_secret_created
+
+        - name: '{{ ansible_name_module }} | Create Operator CRD'
+          ansible.builtin.command: >
+            {{ openshift_cli }} create -f '{{ orchestrator_file }}'
+          register: trident_operator_crd_created 
+
+        - name: '{{ ansible_name_module }} | Create Operator Resources'
+          ansible.builtin.command: >
+            {{ openshift_cli }} create -f '{{ kustomization_file }}'
+          register: trident_operator_manifests_created 
+
+        - name: '{{ ansible_name_module }} | Retrieve Operator Resources'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get all -n {{ trident_operator_ns | default('trident', true) }} 
+          register: trident_operator_resources_retrieved 
+
+        - name: '{{ ansible_name_module }} | Create Operator CR'
+          ansible.builtin.command: >
+            {{ openshift_cli }} create -f '{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml'
+          register: trident_operator_cr_created 
+
+    - name: '{{ ansible_name_module }} | Deploy Trident CSI driver using OC binary'
+      when:
+        - use_helm is defined
+        - use_helm | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:which | Check if helm is installed'
+          ansible.builtin.shell: >
+            which helm
+          ignore_errors: yes
+          register: helm_binary
+
+        - assert:
+            that:
+              - helm_binary is defined 
+              - helm_binary.rc is defined 
+              - helm_binary.rc == 0 
+              - helm_binary.stdout is defined 
+              - helm_binary.stdout != '' 
+            msg: " the helm binary need to be installed on the controller before this install method can be used"
+
+        - name: '{{ ansible_name_module }} | Print warning output'
+          debug:
+            msg: "Ensure you have created a values.yaml file to be used along with apporpriate overwrites especially for image and registry information."
+
+        - name: '{{ ansible_name_module }} | template | Copy values template to staging location'
+          ansible.builtin.template:
+            src: "templates/trident-values.yaml.j2"
+            dest: "{{ staging_dir | default('/tmp/trident', true) }}/values-trident.yaml"
+            force: yes
+
+        - name: '{{ ansible_name_module }} | stat | Check if value file exist'
+          ansible.builtin.stat:
+            path: "{{ staging_dir | default('/tmp/trident', true) }}/values-trident.yaml"
+            get_checksum: false
+          register: trident_driver_values_file_exist
+
+        - assert:
+            that:
+              - trident_driver_values_file_exist.stat is defined 
+              - trident_driver_values_file_exist.stat.exists is defined 
+              - trident_driver_values_file_exist.stat.exists | bool 
+              - trident_driver_values_file_exist.stat.path is defined 
+            msg: " You a values file named values-trident.yaml with the necessary overrides including pull secret which need to exist and valid image location in your private registry"
+
+        - name: '{{ ansible_name_module }} | shell | Install'
+          ansible.builtin.shell: >
+            {{ helm_binary.stdout }} upgrade --install trident {{ helm_dir }} --version 100.2406.0  --create-namespace --namespace trident --set tridentDebug=true --values {{ staging_dir | default('/tmp/trident', true) }}/values-trident.yaml
+          register: trident_charts_installed 
+
