@@ -1,0 +1,487 @@
+- name: 'Gather Cluster Info | configure-ddn-storage-driver.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "configure-ddn-storage-driver-prep"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      ansible.builtin.pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve node sample to get kernel version off'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get nodess --no-headers | head -1 | awk '{print $1}' 
+      ignore_errors: yes
+      register: ocp_node_sample
+
+    - name: '{{ ansible_name_module }} | Retrieve node kernel version'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} debug node/{{ ocp_node_sample.stdout }} -- chroot /host uname -r 2> /dev/null
+      ignore_errors: yes
+      when:
+        - ocp_node_sample.rc is defined
+        - ocp_node_sample.rc == 0
+        - ocp_node_sample.stdout is defined
+        - ocp_node_sample.stdout != '' 
+      register: ocp_node_kernel_version
+
+- name: 'Preppare the VM to use to build client RPM | configure-ddn-storage-driver.yml'
+  hosts: builder 
+  become: yes
+  vars_files:
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "prep-rpm-builder-vm"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve node kernel version'
+      ansible.builtin.shell: >
+        yum --showduplicates list available kernel | grep {{ ocp_node_kernel_version.stdout }} | awk '{print $2}'      
+      ignore_errors: yes
+      when:
+        - ocp_node_kernel_version.rc is defined
+        - ocp_node_kernel_version.rc == 0 
+        - ocp_node_kernel_version.stdout is defined
+        - ocp_node_kernel_version.stdout != '' 
+      register: avail_kernel_versions
+
+    - name: '{{ ansible_name_module }} | Retrieve current controller kernel version'
+      ansible.builtin.shell: >
+        uname -r 2>/dev/null
+      ignore_errors: yes
+      register: controller_kernel_version
+
+    - name: '{{ ansible_name_module }} | Install OCP kernel version on controller'
+      ansible.builtin.shell: >
+        yum install -y {{ ocp_node_kernel_version.stdout }} 
+      when:
+        - ocp_node_kernel_version.stdout is version(controller_kernel_version, '!=', strict=true)
+      register: ocp_kernel_version_installed
+
+    - name: '{{ ansible_name_module }} | List installed kernels on controller'
+      ansible.builtin.shell: >
+        grubby --info=ALL | grep title 
+      when:
+        - ocp_kernel_version_installed.stdout is defined 
+        - ocp_kernel_version_installed.stdout != '' 
+      register: installed_kernel_list
+
+    - name: '{{ ansible_name_module }} | List installed kernels on controller'
+      ansible.builtin.set_fact:
+        ocp_ker_index: "{{ lookup('ansible.builtin.index_of', installed_kernel_list.stdout_lines, 'in', ocp_node_kernel_version.stdout) }}"
+      when:
+        - installed_kernel_list is defined 
+        - installed_kernel_list.stdout_lines is defined 
+        - installed_kernel_list.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | List installed kernels on controller'
+      ansible.builtin.shell: >
+        grub2-set-default {{ ocp_ker_index }}
+      when:
+        - ocp_ker_index is defined
+        - ocp_ker_index != '' 
+
+    - name: '{{ ansible_name_module }} | Reboot build machine'
+      ansible.builtin.reboot:
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 3
+        post_reboot_delay: 45
+        test_command: whoami
+
+- name: 'Build DDN Client RPM | configure-ddn-storage-driver.yml'
+  hosts: builder 
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "build-ddn-driver-client-rpm"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - ddn_client_binary_file is defined and ddn_client_binary_file != ''
+            msg: " the DDN driver archive location on the controller node is required and non empty"
+          when:
+            - not ddn_client_remote_url is defined or ddn_client_remote_url == ''
+    - assert:
+        that:
+          - ddn_client_remote_url is defined and ddn_client_remote_url != ''
+        msg: " the DDN driver archive remote URL location is required and non empty with its protocol (e.g. http)"
+      when:
+        - not ddn_client_binary_file is defined or ddn_client_binary_file == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Download  DDN Client  if applicable'
+      when:
+        - ddn_client_remote_url is defined
+        - ddn_client_remote_url != ''
+      block:
+        - name: '{{ ansible_name_module }} | Download DDN Client binary'
+          get_url:
+            url: "{{ ddn_client_remote_url }}"
+            dest: "{{ ddn_client_binary_file }}"
+            username: "{{ vault_registry_admin_username }}"
+            password: "{{ vault_registry_admin_password }}"
+            force_basic_auth: true
+          when:
+            - use_basic_auth is defined
+            - use_basic_auth | bool
+
+        - name: '{{ ansible_name_module }} | Download DDN Client binary'
+          get_url:
+            url: "{{ ddn_client_remote_url }}"
+            dest: "{{ ddn_client_binary_file }}"
+          when:
+            - not use_basic_auth is defined or not use_basic_auth | bool
+
+        - name: '{{ ansible_name_module }} | stat | Check if trident driver archive file exist'
+      ansible.builtin.stat:
+        path: "{{ ddn_client_binary_file }}"
+        get_checksum: false
+      register: ddn_client_archive_file_exist
+
+    - assert:
+        that:
+          - ddn_client_archive_file_exist.stat is defined
+          - ddn_client_archive_file_exist.stat.exists is defined
+          - ddn_client_archive_file_exist.stat.exists | bool
+          - ddn_client_archive_file_exist.stat.path is defined
+        msg: " the  DDN Client  archive has to be a valid file on the controler"
+
+    - name: '{{ ansible_name_module }} | file:directory | Ensure the staging directory exist'
+      ansible.builtin.file:
+        path: "{{ staging_dir | default('/tmp/ddn-client',true) }}"
+        state: directory
+        mode: 0755
+
+    - name: '{{ ansible_name_module }} | Unpack DDN Client binary'
+      ansible.builtin.unarchive:
+        src: "{{ ddn_client_binary_file }}"
+        dest: "{{ staging_dir | default('/tmp/ddn-client',true) }}"
+      register: ddn_client_extracted
+
+    - ansible.builtin.set_fact:
+        client_dir: "{{ ddn_client_extracted.dest }}/exa-client"
+        client_build_script: "{{ ddn_client_extracted.dest }}/exa-client/exa_client_deploy.py"
+      when:
+        - ddn_client_extracted is defined
+        - ddn_client_extracted.dest is defined
+        - ddn_client_extracted.dest != ''
+        - ddn_client_extracted.extract_results.rc is defined
+        - ddn_client_extracted.extract_results.rc == 0
+
+    - name: '{{ ansible_name_module }} | file:directory | Build the DDN RPM for the OCP kernel version '
+      ansible.builtin.shell: >
+        sh {{ client_build_script }} -i
+      register: ddn_client_rpm_built
+        
+    - name: '{{ ansible_name_module }} | Copy DDN Client RPM files to webserver'
+       when:
+         - ddn_client_rpm_built is defined
+         - ddn_client_rpm_built.rc is defined
+         - ddn_client_rpm_built.rc == 0
+         - nginx_webserver_dir is defined
+         - nginx_webserver_dir != ''
+       block:
+         - name: '{{ ansible_name_module }} | file | Create Directory Structure'
+           ansible.builtin.file:
+             path: '{{ item }}'
+             state: directory
+             mode: '0777'
+           loop:
+             - '{{ nginx_webserver_dir }}/ddn'
+
+         - name: '{{ ansible_name_module }} | find |  Find all ddn rpm files'
+           ansible.builtin.find:
+             path: "{{ client_dir }}/"
+             patterns: "*.rpm"
+           register: ddn_rpm_files
+
+         - name: '{{ ansible_name_module }} | copy | Load DDN RPM Files into Nginx Service'
+           ansible.builtin.copy:
+             src: "{{ item.path }}"
+             dest: "{{ nginx_webserver_dir }}/ddn/{{ item.path | basename }}"
+             mode: 0777
+             force: true
+           loop: "{{ ddn_rpm_files.files }}"
+           loop_control:
+             label: "{{ item.path }}"
+           when:
+             - ddn_rpm_files is defined
+             - ddn_rpm_files.files is defined
+             - ddn_rpm_files.files | length > 0
+
+
+- name: 'Add DDN storage to cluster | configure-ddn-storage-driver.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "configure-ddn-storage-driver"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      ansible.builtin.pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - assert:
+            that:
+              - ddn_client_manifest_binary_file is defined and ddn_client_manifest_binary_file != ''
+            msg: " the DDN client manifest source archive location on the controller node is required and non empty"
+          when:
+            - not ddn_client_manifest_remote_url is defined or ddn_client_manifest_remote_url == ''
+    - assert:
+        that:
+          - ddn_client_manifest_remote_url is defined and ddn_client_manifest_remote_url != ''
+        msg: " the DDN client manifest source archive remote URL location is required and non empty with its protocol (e.g. http)"
+      when:
+        - not ddn_client_manifest_binary_file is defined or ddn_client_manifest_binary_file == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Download  DDN Client manfiest source if applicable'
+      when:
+        - ddn_client_manifest_remote_url is defined
+        - ddn_client_manifest_remote_url != ''
+      block:
+        - name: '{{ ansible_name_module }} | Download DDN Client manifest source'
+          ansible.builtin.get_url:
+            url: "{{ ddn_client_manifest_remote_url }}"
+            dest: "{{ ddn_client_manifest_binary_file }}"
+            username: "{{ vault_registry_admin_username }}"
+            password: "{{ vault_registry_admin_password }}"
+            force_basic_auth: true
+          when:
+            - use_basic_auth is defined
+            - use_basic_auth | bool
+
+        - name: '{{ ansible_name_module }} | Download DDN Client binary'
+          ansible.builtin.get_url:
+            url: "{{ ddn_client_manifest_remote_url }}"
+            dest: "{{ ddn_client_manifest_binary_file }}"
+          when:
+            - not use_basic_auth is defined or not use_basic_auth | bool
+
+        - name: '{{ ansible_name_module }} | stat | Check if trident driver archive file exist'
+      ansible.builtin.stat:
+        path: "{{ ddn_client_manifest_binary_file }}"
+        get_checksum: false
+      register: ddn_client_manifest_archive_file_exist
+
+    - assert:
+        that:
+          - ddn_client_manifest_archive_file_exist.stat is defined
+          - ddn_client_manifest_archive_file_exist.stat.exists is defined
+          - ddn_client_manifest_archive_file_exist.stat.exists | bool
+          - ddn_client_manifest_archive_file_exist.stat.path is defined
+        msg: " the  DDN Client manifest archive has to be a valid file on the controler"
+
+    - name: '{{ ansible_name_module }} | file:directory | Ensure the staging directory exist'
+      ansible.builtin.file:
+        path: "{{ staging_dir | default('/tmp/ddn-client-manifest',true) }}"
+        state: directory
+        mode: 0755
+
+    - name: '{{ ansible_name_module }} | Unpack DDN Client binary'
+      ansible.builtin.unarchive:
+        src: "{{ ddn_client_manifest_binary_file }}"
+        dest: "{{ staging_dir | default('/tmp/ddn-client-manifest',true) }}"
+      register: ddn_client_manifests_extracted
+
+    - ansible.builtin.set_fact:
+        client_manifest_dir: "{{ ddn_client_manifests_extracted.dest }}"
+        client_manifest_deploy_dir: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift"
+      when:
+        - ddn_client_manifests_extracted is defined
+        - ddn_client_manifests_extracted.dest is defined
+        - ddn_client_manifests_extracted.dest != ''
+        - ddn_client_manifests_extracted.extract_results.rc is defined
+        - ddn_client_manifests_extracted.extract_results.rc == 0
+
+    - name: '{{ ansible_name_module }} | Patch OpenShift Registry Image 1 of 3'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge -p '{"spec":{"managementState":"Managed"}}'
+      register: image_reg_mstate_patched 
+
+    - name: '{{ ansible_name_module }} | Patch OpenShift Registry Image 2 of 3'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge -p '{"spec":{"storage":{"emptyDir":{}}}}'
+      register: image_reg_storage_patched 
+
+    - name: '{{ ansible_name_module }} | Patch OpenShift Registry Image 3 of 3'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge -p '{"spec":{"defaultRoute":"true"}}'
+      register: image_reg_route_patched 
+
+    - name: '{{ ansible_name_module }} | replace | update docker build file configmap 1 of 3'
+      ansible.builtin.replace:
+        path: "{{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml"
+        regexp: 'https://github.com/Qeas/rpms.git'
+        replace: 'https://{{ nginx_host_fqdn }}:{{ nginx_host_https_port }}/ddn'
+
+    - name: '{{ ansible_name_module }} | replace | update docker build file configmap 2 of 3'
+      ansible.builtin.replace:
+        path: "{{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml"
+        regexp: 'git clone -b ${KERNEL_VERSION}'
+        replace: 'wget '
+
+    - name: '{{ ansible_name_module }} | replace | update docker build file configmap 3 of 3'
+      ansible.builtin.replace:
+        path: "{{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml"
+        regexp: 'rpms/*.rpm'
+        replace: '*.rpm '
+
+    - name: '{{ ansible_name_module }} | Ensure OpenShift KMM is installed and configured to load the DNN module'
+      block:
+        - name: '{{ ansible_name_module }} | Patch OpenShift Registry Image 1 of 3'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get project openshift-kmm --no-headers | awk '{print $1}'
+          ignore_errors: true
+          register: ocp_kmm_ns_exist 
+
+        - ansible.builtin.assert:
+            that:
+              - ocp_kmm_ns_exist is defined
+              - ocp_kmm_ns_exist.rc is defined
+              - ocp_kmm_ns_exist.rc == 0 
+              - ocp_kmm_ns_exist.stdout is defined
+              - ocp_kmm_ns_exist.stdout != '' 
+              - "'openshift-kmm' in ocp_kmm_ns_exist.stdout"  
+            msg: " the KMM  Operator needs to be installed and configured before running this playbook"
+
+    - name: '{{ ansible_name_module }} | Load Lustre Module to OpenShift 1 of 3'
+      ansible.builtin.command: >
+        {{ openshift_cli }} create -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml 
+      register: lustre_cm_loaded
+
+    - name: '{{ ansible_name_module }} | Load Lustre Module to OpenShift 2 of 3'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lnet-mod.yaml
+      register: lustre_module_loaded
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for buuilder pod to finish building'
+      ansible.builtin.wait_for:
+        timeout: '{{ timeout_length }}'
+      vars:
+        timeout_length: "485"
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | Load Lustre Module to OpenShift 3 of 3'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/ko2iblnd-mod.yaml
+      register: lustre_komodule_loaded
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | get default SDN'
+      ansible.builtin.command: >
+        {{ openshift_cli }}  get networks.operator.openshift.io cluster -ojsonpath='{.spec.defaultNetwork.type}{"\n"}'
+      register: default_sdn_out
+
+    - name: '{{ ansible_name_module }} | update network interface on daemonset config for OpenShiftSDN'
+      when:
+        - default_sdn_out.rc is defined
+        - default_sdn_out.rc == 0 
+        - default_sdn_out.stdout is defined
+        - default_sdn_out.stdout != ''
+        - "'OpenShiftSDN' in default_sdn_out.stdout" 
+      block:
+        - name: '{{ ansible_name_module }} | Retrieve node sample to get interface off'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get nodess --no-headers | head -1 | awk '{print $1}' 
+          ignore_errors: yes
+          register: ocp_node_sample
+
+        - name: '{{ ansible_name_module }} | Retrieve node interface '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} debug node/{{ ocp_node_sample.stdout }} -- chroot /host ip a  | grep ens | head -1 | awk '{print $2}' 2> /dev/null
+          ignore_errors: yes
+          when:
+            - ocp_node_sample.rc is defined
+            - ocp_node_sample.rc == 0
+            - ocp_node_sample.stdout is defined
+            - ocp_node_sample.stdout != '' 
+          register: ocp_node_if
+
+        - name: '{{ ansible_name_module }} | replace | update daemonset config'
+          ansible.builtin.replace:
+            path: "{{ client_manifest_deploy_dir }}/lustre-module/lnet-configuration-ds.yaml"
+            regexp: '--if br-ex'
+            replace: '--if {{ ocp_node_if.stdout.split(":")[0] }} '
+          when:
+            - ocp_node_if is defined
+            - ocp_node_if.rc is defined
+            - ocp_node_if.rc == 0 
+            - ocp_node_if.stdout is defined
+            - ocp_node_if.stdout != '' 
+          register: ocp_node_if
+
+    - name: '{{ ansible_name_module }} | Configure  Lustre lnet on  OpenShift node 1 of 2'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lnet-configuration-ds.yaml
+      register: lustre_lnetds_applied
+
+    - name: '{{ ansible_name_module }} | Configure  Lustre lnet on  OpenShift node 2 of 2'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lustre-mod.yaml
+      register: lustre_lnet_applied
+
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi driver config file'
+      ansible.builtin.replace:
+        path: "{{ client_manifest_deploy_dir }}/exascaler-csi-file-driver-config.yaml"
+        regexp: '^openshift:'
+        replace: 'openshift: true'
+d
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} create | create secret'
+      ansible.builtin.command: >
+        {{ openshift_cli }}  create -n openshift-kmm secret generic exascaler-csi-file-driver-config --from-file={{ client_manifest_deploy_dir }}/exascaler-csi-file-driver-config.yaml
+      register: exascaler_secret_created
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create exascaler config'
+      ansible.builtin.command: >
+        {{ openshift_cli }}  apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/exascaler-csi-file-driver.yaml
+      register: exascaler_config_created
+
