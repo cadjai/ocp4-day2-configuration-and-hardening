@@ -474,7 +474,7 @@
         path: "{{ client_manifest_deploy_dir }}/exascaler-csi-file-driver-config.yaml"
         regexp: '^openshift:'
         replace: 'openshift: true'
-d
+        
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} create | create secret'
       ansible.builtin.command: >
         {{ openshift_cli }}  create -n openshift-kmm secret generic exascaler-csi-file-driver-config --from-file={{ client_manifest_deploy_dir }}/exascaler-csi-file-driver-config.yaml
