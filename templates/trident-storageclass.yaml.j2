@@ -1,0 +1,27 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ tbc_sc_name | default('ontap-nas', true) }}
+{% if make_tbc_sc_default is defined and make_tbc_sc_default | bool %}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+{% endif %}
+provisioner: csi.trident.netapp.io
+parameters:
+  backendType: "{{ tbc_backend_driver_name | default('ontap-nas', true) }}"
+{% if tbc_backend_media is defined and tbc_backend_media != '' %}
+  media: "{{ tbc_backend_media }}"
+{% endif %}
+{% if tbc_sc_fstype is defined and tbc_sc_fstype != '' %}
+  fsType: "{{ tbc_sc_fstype }}"
+{% endif %}
+{% if tbc_backend_storage_pools is defined and tbc_backend_storage_pools != '' %}
+  storagePools: "{{ tbc_backend_storage_pools }}"
+{% endif %}
+{% if tbc_backend_iops is defined and tbc_backend_iops != '' %}
+  IOPS: "{{ tbc_backend_iops }}"
+{% endif %}
+{% if tbc_backend_provisioning_type is defined and tbc_backend_provisioning_type != '' %}
+  provisioningType: "{{ tbc_backend_provisioning_type }}"
+{% endif %}
+  snapshots: "{{ tbc_sc_snapshot_enabled | default('true', true) }}"

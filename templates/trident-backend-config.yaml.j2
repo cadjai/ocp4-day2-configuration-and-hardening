@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ tbc_backend_secret_name | default('backend-tbc-ontap-nas-advanced-secret', true) }}
+type: Opaque
+stringData:
+  username: {{ tbc_backend_username }}
+  password: {{ tbc_backend_password }}
+---
+apiVersion: trident.netapp.io/v1
+kind: TridentBackendConfig
+metadata:
+  name: {{ tbc_backend_config_name | default('backend-tbc-ontap-nas-advanced', true) }}
+spec:
+  version: 1
+  storageDriverName: {{ tbc_backend_driver_name | default('ontap-nas', true) }}
+  managementLIF: {{ tbc_backend_mgmt_interface_ip }}
+  dataLIF: {{ tbc_backend_data_interface_ip }}
+  backendName: {{ tbc_backend_name | default('tbc-ontap-nas-advanced', true) }}
+  svm: trident_svm
+  credentials: 
+    name: {{ tbc_backend_secret_name | default('backend-tbc-ontap-nas-advanced-secret', true) }}
+  limitAggregateUsage: 80%
+  limitVolumeSize: {{ tbc_backend_volume_size | default('50Gi', true) }}
+  nfsMountOptions: nfsvers=4
+  defaults:
+    spaceReserve: volume
+    encryption: {{ tbc_backend_volume_encryption_enabled | default('false', true) }}
+{% if tbc_backend_volume_export_policy is defined and tbc_backend_volume_export_policy != '' %}
+    exportPolicy: {{ tbc_backend_volume_export_policy }}
+{% endif %}
+    snapshotPolicy: {{ tbc_backend_volume_snapshot_policy | default('default', true) }}
+    snapshotReserve: '10'
+  deletionPolicy: retain
+{% if configure_pv_auto_export is defined and configure_pv_auto_export | bool %}
+{% if machine_cidr is defined and machine_cidr | default([], true) | length > 0 %}
+  autoExportCIDRs:
+{% for mcidr in machine_cidr %}
+  - {{ mcidr }}
+{% endfor %}
+  autoExportPolicy: true
+{% endif %}
+{% endif %}
