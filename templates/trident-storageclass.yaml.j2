@@ -8,6 +8,8 @@ metadata:
 {% endif %}
 provisioner: csi.trident.netapp.io
 parameters:
+  allowVolumeExpansion: true
+  volumeBindingMode: Immediate
   backendType: "{{ tbc_backend_driver_name | default('ontap-nas', true) }}"
 {% if tbc_backend_media is defined and tbc_backend_media != '' %}
   media: "{{ tbc_backend_media }}"
