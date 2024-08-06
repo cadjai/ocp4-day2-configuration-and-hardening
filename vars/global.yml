@@ -477,6 +477,130 @@ operators_to_deploy_single_index:
     create_catalog_group: 'true'
     index_image: 'cincinnati-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
 
+  redhat-oadp-operator:      ### name of the operator as it was used to mirror the operator
+    group_name: 'redhat-oadp-operator-group'
+    catalog_name: 'custom-redhat-oadp-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-adp'
+    target_namespace: 'openshift-adp' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-adp'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'redhat-oadp-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+  clusterresourceoverride:      ### name of the operator as it was used to mirror the operator
+    group_name: 'clusterresourceoverride-group'
+    catalog_name: 'custom-clusterresourceoverride'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'clusterresourceoverride-operator'
+    target_namespace: 'clusterresourceoverride-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'clusterresourceoverride-operator'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'clusterresourceoverride-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+  authorino-operator:      ### name of the operator as it was used to mirror the operator
+    group_name: 'authorino-operator-group'
+    catalog_name: 'custom-authorino-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'authorino-operator'
+    target_namespace: 'authorino-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'authorino-operator'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'authorino-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+    create_customresource: 'true'
+    customresource_template: 'templates/authorino-customresource.yml.j2'
+
+  serverless-operator:      ### name of the operator as it was used to mirror the operator
+    group_name: 'serverless-operator-group'
+    catalog_name: 'custom-serverless-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-serverless'   ### namespace used for OG
+    target_namespace: '' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-serverless'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'serverless-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+  kiali-ossm:      ### name of the operator as it was used to mirror the operator
+    group_name: 'kiali-ossm-group'
+    catalog_name: 'custom-kiali-ossm'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-operators'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-operators'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'kiali-ossm-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+  tempo-product:      ### name of the operator as it was used to mirror the operator
+    group_name: 'tempo-product-group'
+    catalog_name: 'custom-tempo-product'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-tempo-operator'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-tempo-operator'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'tempo-product-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+  servicemeshoperator:      ### name of the operator as it was used to mirror the operator
+    group_name: 'servicemeshoperator-group'
+    catalog_name: 'custom-servicemeshoperator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-operators'
+    target_namespace: 'all' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-operators'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'false'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'servicemeshoperator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+
+  rhods-operator:      ### name of the operator as it was used to mirror the operator
+    group_name: 'rhods-operator-group'
+    catalog_name: 'custom-rhods-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+    sub_channel: 'v1'
+    deploy_namespace: 'openshift-adp'
+    target_namespace: 'openshift-adp' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'openshift-adp'
+    patch_namespace: 'true'
+    patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+    deploy: 'true'
+    create_namespace: 'true'
+    create_catalog: 'false'
+    create_catalog_group: 'true'
+    index_image: 'rhods-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+    create_customresource: 'true'
+    customresource_template: 'templates/rhods-operator-dsc.yml.j2'
+
 ################## Infra nodes configuration #################################
 infra_taint_value: 'reserved'
 infranode:
@@ -623,7 +747,7 @@ oauthclients_to_update:
     update: false
     name: 'cluster'
     timeout: '15m'
-     maxage: '1800'
+    maxage: '1800'
   console-client:
     update: true
     name: 'console'

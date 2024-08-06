@@ -1,0 +1,51 @@
+apiVersion: operator.authorino.kuadrant.io/v1beta1
+kind: Authorino
+metadata:
+  name: authorino
+  namespace: "authorino-operator"
+spec:
+  clusterWide: true
+  authConfigLabelSelectors: environment=production
+  secretLabelSelectors: authorino.kuadrant.io/component=authorino,environment=production
+  replicas: 2
+  evaluatorCacheSize: 2 # mb
+  image: {{ authorino_instance_image | default('quay.io/kuadrant/authorino', true) }}:{{ authorino_instance_image_tag | default('latest', true) }}
+  imagePullPolicy: Always
+  logLevel: debug
+  logMode: production
+  metrics:
+    port: 8080
+    deep: true
+{% if enable_tls is defined and enable_tls | bool %}
+  listener:
+    ports:
+      grpc: 50001
+      http: 5001
+    tls:
+      enabled: true
+      certSecretRef:
+        name: authorino-server-cert # secret must contain `tls.crt` and `tls.key` entries
+  oidcServer:
+    port: 8083
+    tls:
+      enabled: true
+      certSecretRef:
+        name: authorino-oidc-server-cert # secret must contain `tls.crt` and `tls.key` entries
+  volumes:
+    items:
+      - name: keycloak-tls-cert
+        mountPath: /etc/ssl/certs
+        configMaps:
+          - keycloak-tls-cert
+        items: # details to mount the k8s configmap in the authorino pods
+          - key: keycloak.crt
+            path: keycloak.crt
+    defaultMode: 420
+{% else %}
+  listener:
+    tls:
+      enabled: false
+  oidcServer:
+    tls:
+      enabled: false
+{% endif %}
