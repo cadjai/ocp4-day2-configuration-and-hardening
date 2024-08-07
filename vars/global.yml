@@ -588,9 +588,9 @@ operators_to_deploy_single_index:
     group_name: 'rhods-operator-group'
     catalog_name: 'custom-rhods-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
     sub_channel: 'v1'
-    deploy_namespace: 'openshift-adp'
-    target_namespace: 'openshift-adp' ### values are all, empty or list of ns names
-    deploy_namespace_description: 'openshift-adp'
+    deploy_namespace: 'redhat-ods-operator'
+    target_namespace: 'redhat-ods-operator' ### values are all, empty or list of ns names
+    deploy_namespace_description: 'redhat-ods-operator'
     patch_namespace: 'true'
     patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
     deploy: 'true'
