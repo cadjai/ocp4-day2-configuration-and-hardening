@@ -336,6 +336,13 @@
     - ansible.builtin.set_fact:
         client_manifest_dir: "{{ ddn_client_manifests_extracted.dest }}"
         client_manifest_deploy_dir: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift"
+        client_csi_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/exascaler-csi-file-driver.yaml"
+        client_csi_driver_config_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/exascaler-csi-file-driver-config.yaml"
+        client_lustre_docker_cm_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/lustre-module/lustre-dockerfile-configmap.yaml"
+        client_lustre_lnet_mod_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/lustre-module/lustre-module/lnet-mod.yaml"
+        client_lustre_ko2iblnd_mod_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/lustre-module/lustre-module/ko2iblnd-mod.yaml"
+        client_lustre_lnet_config_ds_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/lustre-module/lustre-module/lnet-configuration-ds.yaml"
+        client_lustre_mod_file: "{{ ddn_client_manifests_extracted.dest }}/deploy/openshift/lustre-module/lustre-module/lustre-mod.yaml"
       when:
         - ddn_client_manifests_extracted is defined
         - ddn_client_manifests_extracted.dest is defined
@@ -360,19 +367,19 @@
 
     - name: '{{ ansible_name_module }} | replace | update docker build file configmap 1 of 3'
       ansible.builtin.replace:
-        path: "{{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml"
+        path: "{{ client_lustre_docker_cm_file }}"
         regexp: 'https://github.com/Qeas/rpms.git'
         replace: 'https://{{ nginx_host_fqdn }}:{{ nginx_host_https_port }}/ddn'
 
     - name: '{{ ansible_name_module }} | replace | update docker build file configmap 2 of 3'
       ansible.builtin.replace:
-        path: "{{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml"
+        path: "{{ client_lustre_docker_cm_file }}"
         regexp: 'git clone -b ${KERNEL_VERSION}'
         replace: 'wget '
 
     - name: '{{ ansible_name_module }} | replace | update docker build file configmap 3 of 3'
       ansible.builtin.replace:
-        path: "{{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml"
+        path: "{{ client_lustre_docker_cm_file }}"
         regexp: 'rpms/*.rpm'
         replace: '*.rpm '
 
@@ -396,12 +403,12 @@
 
     - name: '{{ ansible_name_module }} | Load Lustre Module to OpenShift 1 of 3'
       ansible.builtin.command: >
-        {{ openshift_cli }} create -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lustre-dockerfile-configmap.yaml 
+        {{ openshift_cli }} create -n openshift-kmm -f {{ client_lustre_docker_cm_file }} 
       register: lustre_cm_loaded
 
     - name: '{{ ansible_name_module }} | Load Lustre Module to OpenShift 2 of 3'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lnet-mod.yaml
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_lustre_lnet_mod_file }}
       register: lustre_module_loaded
 
     - name: '{{ ansible_name_module }} | wait_for | wait for buuilder pod to finish building'
@@ -413,7 +420,7 @@
 
     - name: '{{ ansible_name_module }} | Load Lustre Module to OpenShift 3 of 3'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/ko2iblnd-mod.yaml
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_lustre_ko2iblnd_mod_file }}
       register: lustre_komodule_loaded
 
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | get default SDN'
@@ -448,7 +455,7 @@
 
         - name: '{{ ansible_name_module }} | replace | update daemonset config'
           ansible.builtin.replace:
-            path: "{{ client_manifest_deploy_dir }}/lustre-module/lnet-configuration-ds.yaml"
+            path: "{{ client_lustre_lnet_config_ds_file }}"
             regexp: '--if br-ex'
             replace: '--if {{ ocp_node_if.stdout.split(":")[0] }} '
           when:
@@ -461,27 +468,117 @@
 
     - name: '{{ ansible_name_module }} | Configure  Lustre lnet on  OpenShift node 1 of 2'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lnet-configuration-ds.yaml
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_lustre_lnet_config_ds_file }}
       register: lustre_lnetds_applied
 
     - name: '{{ ansible_name_module }} | Configure  Lustre lnet on  OpenShift node 2 of 2'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/lustre-module/lustre-mod.yaml
+        {{ openshift_cli }} apply -n openshift-kmm -f {{ client_lustre_mod_file }}
       register: lustre_lnet_applied
 
     - name: '{{ ansible_name_module }} | replace | update exascaler csi driver config file'
       ansible.builtin.replace:
-        path: "{{ client_manifest_deploy_dir }}/exascaler-csi-file-driver-config.yaml"
+        path: "{{ client_csi_driver_config_file }}"
         regexp: '^openshift:'
         replace: 'openshift: true'
         
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 1 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'registry.k8s.io/sig-storage/csi-provisioner'
+        replace: '{{ csi_provisioner_image }}'
+      when:
+        - csi_provisioner_image is defined
+        - csi_provisioner_image != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 2 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'v3.6.3'
+        replace: '{{ csi_provisioner_image_tag }}'
+      when:
+        - csi_provisioner_image_tag is defined
+        - csi_provisioner_image_tag != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 3 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'registry.k8s.io/sig-storage/csi-attacher'
+        replace: '{{ csi_attacher_image }}'
+      when:
+        - csi_attacher_image is defined
+        - csi_attacher_image != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 4 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'v4.4.0'
+        replace: '{{ csi_attacher_image_tag }}'
+      when:
+        - csi_attacher_image_tag is defined
+        - csi_attacher_image_tag != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 5 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'k8s.gcr.io/sig-storage/csi-resizer'
+        replace: '{{ csi_resizer_image }}'
+      when:
+        - csi_resizer_image is defined
+        - csi_resizer_image != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 6 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'v1.4.0'
+        replace: '{{ csi_resizer_image_tag }}'
+      when:
+        - csi_resizer_image_tag is defined
+        - csi_resizer_image_tag != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 7 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'registry.k8s.io/sig-storage/csi-node-driver-registrar'
+        replace: '{{ csi_node_registrar_image }}'
+      when:
+        - csi_node_registrar_image is defined
+        - csi_node_registrar_image != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 8 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'v2.9.0'
+        replace: '{{ csi_node_registrar_image_tag }}'
+      when:
+        - csi_node_registrar_image_tag is defined
+        - csi_node_registrar_image_tag != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 9 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'quay.io/ddn/exascaler-openshift-file-driver'
+        replace: '{{ exascaler_file_driver_image }}'
+      when:
+        - exascaler_file_driver_image is defined
+        - exascaler_file_driver_image != '' 
+        
+    - name: '{{ ansible_name_module }} | replace | update exascaler csi file driver images 10 of 10'
+      ansible.builtin.replace:
+        path: "{{ client_csi_file }}"
+        regexp: 'v2.2.5'
+        replace: '{{ exascaler_file_driver_image_tag }}'
+      when:
+        - exascaler_file_driver_image_tag is defined
+        - exascaler_file_driver_image_tag != '' 
+        
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} create | create secret'
       ansible.builtin.command: >
-        {{ openshift_cli }}  create -n openshift-kmm secret generic exascaler-csi-file-driver-config --from-file={{ client_manifest_deploy_dir }}/exascaler-csi-file-driver-config.yaml
+        {{ openshift_cli }}  create -n openshift-kmm secret generic exascaler-csi-file-driver-config --from-file={{ client_csi_driver_config_file }}
       register: exascaler_secret_created
 
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create exascaler config'
       ansible.builtin.command: >
-        {{ openshift_cli }}  apply -n openshift-kmm -f {{ client_manifest_deploy_dir }}/exascaler-csi-file-driver.yaml
+        {{ openshift_cli }}  apply -n openshift-kmm -f {{ client_csi_file }}
       register: exascaler_config_created
 
