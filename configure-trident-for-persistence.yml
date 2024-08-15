@@ -223,10 +223,16 @@
             {{ openshift_cli }} create -f '{{ orchestrator_file }}'
           register: trident_operator_crd_created 
 
-        - name: '{{ ansible_name_module }} | Create Operator Resources'
+          ### remove customization step since we are deploying to default namespace
+        #- name: '{{ ansible_name_module }} | Create Operator Resources'
+        #  ansible.builtin.command: >
+        #    {{ openshift_cli }} create -f '{{ kustomization_file }}'
+        #  register: trident_operator_manifests_created 
+
+        - name: '{{ ansible_name_module }} | Deploy Orchestrator Bundle'
           ansible.builtin.command: >
-            {{ openshift_cli }} create -f '{{ kustomization_file }}'
-          register: trident_operator_manifests_created 
+            {{ openshift_cli }} create -f '{{ bundle_file }}'
+          register: trident_operator_bundle_created 
 
         - name: '{{ ansible_name_module }} | Retrieve Operator Resources'
           ansible.builtin.command: >
@@ -236,6 +242,10 @@
         - name: '{{ ansible_name_module }} | Create Operator CR'
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml'
+          when:
+            - trident_driver_version is defined 
+            - trident_driver_version != '' 
+            - trident_driver_version is version('24.06', '>=') 
           register: trident_operator_cr_created 
 
     - name: '{{ ansible_name_module }} | Deploy Trident CSI driver using OC binary'
