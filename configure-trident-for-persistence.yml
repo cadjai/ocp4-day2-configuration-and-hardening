@@ -124,6 +124,18 @@
             regexp: 'netapp/trident-operator'
             replace: '{{ registry_host_fqdn }}/{{ local_repository }}/netapp/trident-operator'
 
+        - name: '{{ ansible_name_module }} | replace | update image file location in bundle manifest'
+          ansible.builtin.replace:
+            path: "{{ bundle_file }}"
+            regexp: ': netapp/trident-operator'
+            replace: ': {{ registry_host_fqdn }}/{{ local_repository }}/netapp/trident-operator'
+
+        - name: '{{ ansible_name_module }} | replace | update image file location in bundle manifest'
+          ansible.builtin.replace:
+            path: "{{ bundle_file }}"
+            regexp: 'docker.io/netapp/trident-operator'
+            replace: '{{ registry_host_fqdn }}/{{ local_repository }}/netapp/trident-operator'
+
         - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator manifest'
           ansible.builtin.replace:
             path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_customimage.yaml"
@@ -159,22 +171,35 @@
             - autosupport_proxy_url is defined
             - autosupport_proxy_url != '' 
 
+        - name: '{{ ansible_name_module }} | set_fact | trident sig storage repo fact'
+          ansible.builtin.set_fact:
+            trident_sig_repo: "sig-storage"
+          when:
+            - not trident_sig_repo is defined or trident_sig_repo == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | trident image repo fact'
+          ansible.builtin.set_fact:
+            trident_image_repo: "netapp"
+          when:
+            - not trident_image_repo is defined or trident_image_repo == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | trident autosupport image tag fact'
+          ansible.builtin.set_fact:
+            trident_autosupport_image_tag: "trident-autosupport:24.06.0"
+          when:
+            - not trident_autosupport_image_tag is defined or trident_autosupport_image_tag == ''
+
         - name: '{{ ansible_name_module }} | insert | update image file location in orchestrator manifest 1 of 3'
           ansible.builtin.lineinfile:
             dest: "{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml"
             insertbefore: '^namespace:'
             line: 'imageRegistry: {{ registry_host_fqdn }}/{{ local_repository }}/{{ trident_sig_repo }}'
-          vars:
-            trident_sig_repo: "sig-storage"
 
         - name: '{{ ansible_name_module }} | insert | update image file location in orchestrator manifest 2 of 3'
           ansible.builtin.lineinfile:
             dest: "{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml"
             insertbefore: '^Debug:'
             line: 'autosupportImage: {{ registry_host_fqdn }}/{{ local_repository }}/{{ trident_image_repo }}/{{ trident_autosupport_image_tag }}'
-          vars:
-            trident_image_repo: "netapp"
-            trident_autosupport_image_tag: "trident-autosupport:24.06.0"
 
         - name: '{{ ansible_name_module }} | insert | update image file location in orchestrator manifest 3 of 3'
           ansible.builtin.lineinfile:
@@ -208,6 +233,21 @@
                 - pull_secret_exist.stdout is defined
                 - pull_secret_exist.stdout != '' 
               block:
+                - name: '{{ ansible_name_module }} | Get Existing trident pull secret'
+                  ansible.builtin.command: >
+                    {{ openshift_cli }} get secret pull-secret -n trident
+                  ignore_errors: yes
+                  register: trident_pull_secret_exist
+
+                - name: '{{ ansible_name_module }} | Delete existing trident pull secret'
+                  ansible.builtin.command: >
+                    {{ openshift_cli }} delete secret pull-secret -n trident
+                  when:
+                    - trident_pull_secret_exist.rc is defined 
+                    - trident_pull_secret_exist.rc == 0 
+                    - trident_pull_secret_exist.stdout is defined 
+                    - trident_pull_secret_exist.stdout != '' 
+
                 - name: '{{ ansible_name_module }} | command | Extract existing pull secret file'
                   ansible.builtin.command: >
                     {{ openshift_cli }} extract secret/pull-secret -n openshift-config --to={{ staging_dir | default('/tmp/trident',true) }}
@@ -215,23 +255,19 @@
 
                 - name: '{{ ansible_name_module }} | command | Create pull secret in trient namespace'
                   ansible.builtin.command: >
-                    {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/trident',true) }}/.dockerconfigjson -n trident
+                    {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/trident',true) }}/.dockerconfigjson -n trident --confirm=true
                   register: pull_secret_created
 
         - name: '{{ ansible_name_module }} | Create Operator CRD'
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ orchestrator_file }}'
+          failed_when: "trident_operator_crd_created.rc >=1 and not ' already exists' in trident_operator_crd_created.stderr"
           register: trident_operator_crd_created 
-
-          ### remove customization step since we are deploying to default namespace
-        #- name: '{{ ansible_name_module }} | Create Operator Resources'
-        #  ansible.builtin.command: >
-        #    {{ openshift_cli }} create -f '{{ kustomization_file }}'
-        #  register: trident_operator_manifests_created 
 
         - name: '{{ ansible_name_module }} | Deploy Orchestrator Bundle'
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ bundle_file }}'
+          failed_when: "trident_operator_bundle_created.rc >=1 and not ' already exists' in trident_operator_bundle_created.stderr"
           register: trident_operator_bundle_created 
 
         - name: '{{ ansible_name_module }} | Retrieve Operator Resources'
@@ -239,9 +275,10 @@
             {{ openshift_cli }} get all -n {{ trident_operator_ns | default('trident', true) }} 
           register: trident_operator_resources_retrieved 
 
-        - name: '{{ ansible_name_module }} | Create Operator CR'
+        - name: '{{ ansible_name_module }} | Create Orchestrator CR'
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ deploy_dir }}/crds/tridentorchestrator_cr.yaml'
+          failed_when: "trident_operator_cr_created.rc >=1 and not ' already exists' in trident_operator_cr_created.stderr"
           when:
             - trident_driver_version is defined 
             - trident_driver_version != '' 
@@ -359,13 +396,13 @@
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ item.stat.exists.path }}'
           loop: "{{ tbc_files_exist.results }}"
+          failed_when: "trident_tbc_created.rc >=1 and not ' already exists' in trident_tbc_created.stderr"
           when:
             - item.stat is defined
             - item.stat.exists is defined
             - item.stat.exists | bool 
             - item.stat.exists.path is defined
           register: trident_tbc_created 
-
 
     ##################### Create Trident t ###################################
     - name: '{{ ansible_name_module }} | Create Trident Storage classes if necessary'
@@ -410,6 +447,7 @@
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ item.stat.exists.path }}'
           loop: "{{ tbc_sc_files_exist.results }}"
+          failed_when: "trident_sc_created.rc >=1 and not ' already exists' in trident_sc_created.stderr"
           when:
             - item.stat is defined
             - item.stat.exists is defined
