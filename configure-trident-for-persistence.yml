@@ -29,6 +29,8 @@
       register: login_out
 
     - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      when:
+        - not use_default_manifests is defined or not use_default_manifests | bool
       block:
         - assert:
             that:
@@ -138,12 +140,6 @@
             sample_dir: "{{ staging_dir | default('/tmp', true) }}/trident/sample-input"
             clusterrole_file: "{{ staging_dir | default('/tmp', true) }}/trident/clusterrole_post_1_25.yaml"
             orchestrator_file: "{{ staging_dir | default('/tmp', true) }}/trident/crds/trident.netapp.io_tridentorchestrators_crd.yaml"
-          when:
-            - trident_driver_extracted is defined
-            - trident_driver_extracted.dest is defined
-            - trident_driver_extracted.dest != '' 
-            - trident_driver_extracted.extract_results.rc is defined
-            - trident_driver_extracted.extract_results.rc == 0 
 
     - name: '{{ ansible_name_module }} | Deploy Trident CSI driver using OC binary'
       when:
@@ -174,8 +170,8 @@
         - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator manifest'
           ansible.builtin.replace:
             path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_customimage.yaml"
-            regexp: 'localhost:5000/netapp/trident-operator'
-            replace: '{{ registry_host_fqdn_port }}/{{ local_repository }}/netapp/trident-operator'
+            regexp: 'localhost:5000/netapp/trident'
+            replace: '{{ registry_host_fqdn_port }}/{{ local_repository }}/netapp/trident'
 
         - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator pull secret manifest 1 of 2'
           ansible.builtin.replace:
