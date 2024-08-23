@@ -1007,6 +1007,20 @@ custom_ca_file: ''  ### CA for the platform API endpoint (e.g. govcloud API CA)
 # End Platform env variables
 ###################################
 
+###################################
+#  Trident Driver Config env variables
+###################################
+make_tbc_sc_default: 'true'
+use_default_manifests: 'true'
+create_trident_backend: 'true'
+create_trident_sc: 'true'
+trident_image_tag: 'trident:24.06.0'
+trident_autosupport_iamge_tag: 'trident-autosupport:24.06.0'
+trident_driver_version: '24.06'
+
+###################################
+#  End Trident Driver Config env variables
+###################################
 
 #####################################################################################################
 # End of user configurable variables
