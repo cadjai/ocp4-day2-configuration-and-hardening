@@ -185,13 +185,13 @@
             regexp: 'thisisasecret'
             replace: '{{ registry_pullsecret }}'
 
-        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator autosupport cr manifest 1 of 2'
+        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator autosupport cr manifest 1 of 3'
           ansible.builtin.replace:
             path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_autosupport.yaml"
             regexp: 'netapp/trident'
             replace: '{{ registry_host_fqdn_port }}/{{ local_repository }}/netapp/trident'
 
-        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator autosupport cr manifest 2 of 2'
+        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator autosupport cr manifest 2 of 3'
           ansible.builtin.replace:
             path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_autosupport.yaml"
             regexp: 'http://proxy.example.com:8888'
@@ -200,8 +200,17 @@
             - update_autosupport_proxy is defined
             - update_autosupport_proxy | bool 
             - autosupport_proxy_url is defined
-            - autosupport_proxy_url != '' 
-
+            - autosupport_proxy_url != ''
+            
+        - name: '{{ ansible_name_module }} | replace | update image file location in orchestrator autosupport cr manifest 3 of 3'
+          ansible.builtin.replace:
+            path: "{{ deploy_dir }}/crds/tridentorchestrator_cr_autosupport.yaml"
+            regexp: 'silenceAutosupport: false'
+            replace: 'silenceAutosupport: true'
+          when:
+            - silence_autosupport_reporting is defined
+            - silence_autosupport_reporting | bool 
+            
         - name: '{{ ansible_name_module }} | set_fact | trident sig storage repo fact'
           ansible.builtin.set_fact:
             trident_sig_repo: "sig-storage"

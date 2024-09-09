@@ -1017,6 +1017,7 @@ create_trident_sc: 'true'
 trident_image_tag: 'trident:24.06.0'
 trident_autosupport_iamge_tag: 'trident-autosupport:24.06.0'
 trident_driver_version: '24.06'
+silence_autosupport_reporting: 'true'
 
 ###################################
 #  End Trident Driver Config env variables
