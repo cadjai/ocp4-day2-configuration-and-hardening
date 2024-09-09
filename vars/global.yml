@@ -902,7 +902,7 @@ gpunode:
   mem_size: 16384
   node_count: 1
   requester: ''
-  taint_key: ''
+  taint_key: 'reserved'  ### key/string used to taint GPU nodes
   env: ''
   is_mig: 'false'
   mig_strategy: 'single'  ### use one of single or mixed. Given that we are in a shared multi tenant cluster there is no point in using mixed strategy.
