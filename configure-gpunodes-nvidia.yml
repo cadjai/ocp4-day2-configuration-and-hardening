@@ -1,0 +1,391 @@
+- name: 'Configure GPU nodes | configure-gpunodes.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "configure-gpunodes"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | assert | gpunode.taint_key is defined'
+      ansible.builtin.assert:
+        that:
+          - gpunode.taint_key is defined
+          - gpunode.taint_key != ''
+        msg: "gpunode.taint_key required so we can assing the workload node to a tenant"
+
+    - name: '{{ ansible_name_module }} | Ensure required conditions are met'
+      block:
+        - name: '{{ ansible_name_module }} | Check if Namespaces exist'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get ns --no-headers  | egrep 'openshift-nfd|nvidia-gpu-operator|habana-ai-operator' | wc -l
+          ignore_errors: yes
+          register: req_ns_exist
+
+        - name: '{{ ansible_name_module }} | Check if failed pods exist'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get po -n {{ item }}  --no-headers  | grep -vi running | wc -l
+          ignore_errors: yes
+          when:
+            - req_ns_exist is defined
+            - req_ns_exist.rc is defined
+            - req_ns_exist.rc == 0
+            - req_ns_exist.stdout is defined
+            - req_ns_exist.stdout | int == 2
+          loop:
+            - 'openshift-nfd'
+            - 'nvidia-gpu-operator'
+            - 'habana-ai-operator'
+          register: running_po_exist
+
+        - name: '{{ ansible_name_module }} | Print output of  failed pods check 1 of 3'
+          debug:
+            var: running_po_exist
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | Print output of  failed pods check 1 of 3'
+          debug:
+            var: running_po_exist.results | length
+            verbosity: 2
+
+        - ansible.builtin.assert:
+             that:
+               - running_po_exist is defined
+               - running_po_exist.results is defined
+               - (running_po_exist.results[0] is defined and running_po_exist.results[0].rc is defined and running_po_exist.results[0].rc != "0" and running_po_exist.results[0].stdout is defined and running_po_exist.results[0].stdout != 0) or (running_po_exist.results[1] is defined and running_po_exist.results[1].rc is defined and running_po_exist.results[1].rc != "0" and running_po_exist.results[1].stdout is defined and running_po_exist.results[1].stdout != 0)
+             msg: " the Node Feature Discovery and Nvidia-gpu-operator must be installed and configured "
+
+  tasks:
+    - name: '{{ ansible_name_module }} | set gpu_nodes list if not defined and assume all workers are gpu nodes'
+      when:
+        - not gpu_nodes is defined or gpu_nodes == '' or gpu_nodes | default([]) | length == 0
+      block:
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get machine | get infra machine'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | awk '{print $1}'
+          register: gpu_machines
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get machine | get infra machine node names'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get machine {{ item }} -o=jsonpath='{.status.nodeRef.name}{"\n"}' -n openshift-machine-api
+          when:
+            - gpu_machines is defined
+            - gpu_machines.rc == 0
+            - gpu_machines.stdout_lines is defined
+            - gpu_machines.stdout_lines != ""
+          loop: "{{ gpu_machines.stdout_lines }}"
+          register: gpu_node_names
+
+        - name: '{{ ansible_name_module }} | set_fact | set infra node label'
+          set_fact:
+            gpu_nodes: "{{ gpu_nodes | default([], true) + [item.stdout] }}"
+          loop: "{{ gpu_node_names.results }}"
+          when:
+            - gpu_node_names.results is defined
+            - gpu_node_names.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | set_fact | set gpu node label'
+      set_fact:
+        gpu_label: "{{ gpunode.role }}"
+
+    - name: '{{ ansible_name_module }} | set_fact | set gpu node label'
+      set_fact:
+        gpu_taint_value: "{{ gpunode.taint_key | default('reserved',false) }}"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} adm taint | taint infra nodes'
+      ansible.builtin.command: >
+        {{ openshift_cli }} adm taint nodes {{ item }} {{ gpu_label }}={{ gpu_taint_value }}:NoSchedule {{ gpu_label }}={{ gpu_taint_value }}:NoExecute --overwrite=true
+      loop: "{{ gpu_nodes }}"
+
+    - name: '{{ ansible_name_module }} | Ensure required operators are properly configured'
+      block:
+        - name: '{{ ansible_name_module }} | Check if NFD CR exist'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get nodefeaturediscvery nfd-instance -n openshift-nfd --no-headers | wc -l
+          ignore_errors: yes
+          register: nfd_cr_exist
+
+        - name: '{{ ansible_name_module }} | template | Copy ClusterPolicy template to staging location'
+          ansible.builtin.template:
+            src: "templates/nodefeaturediscovery-nfd-instance.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/nodefeaturediscovery-nfd-instance.yaml"
+            force: yes
+          when:
+            - nfd_cr_exist is defined
+            - nfd_cr_exist.rc is defined
+            - nfd_cr_exist.rc == 0
+            - nfd_cr_exist.stdout is defined
+            - nfd_cr_exist.stdout | int == 1
+          register: nfd_cr_copied
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy NFD CR '
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/nodefeaturediscovery-nfd-instance.yaml
+          ignore_errors: yes
+          when:
+            - nfd_cr_copied is defined
+            - nfd_cr_copied.rc is defined
+            - nfd_cr_copied.rc == 0
+          register: nfd_cr_created
+
+        - name: '{{ ansible_name_module }} | shell | Get NFD failing pods '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get pods -n openshift-nfd --no-headers | grep -vi running | wc -l
+          register: failing_pods_nfd
+
+        - name: '{{ ansible_name_module }} | shell | Verify GPU nodes are discovered'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} describe node | egrep 'Roles|pci' | grep -v master | grep {{ gpu_device | d('pci-10de', true) }} | wc -l
+          when:
+            - failing_pods_nfd.rc is defined
+            - failing_pods_nfd.rc == 0
+          register: gpu_node_discovered
+
+        - name: '{{ ansible_name_module }} | Check if ClusterPolicy CR exist'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get clusterpolicy gpu-cluster-policy -n nvidia-gpu-operator --no-headers | wc -l
+          ignore_errors: yes
+          register: clusterpolicy_cr_exist
+
+        - name: '{{ ansible_name_module }} | Process and apply ClusterPolicy if one does not already exist'
+          when:
+            - clusterpolicy_cr_exist.stdout is defined
+            - clusterpolicy_cr_exist.stdout | int < 1
+          block: 
+            - name: '{{ ansible_name_module }} | template | Copy ClusterPolicy template to staging location'
+              vars:
+                node_taint: "{{ gpunode.taint_key }}"
+              ansible.builtin.template:
+                src: "templates/clusterpolicy-gpu-cluster-policy.yaml.j2"
+                dest: "{{ staging_dir | d('/tmp', true) }}/clusterpolicy-gpu-cluster-policy.yaml"
+                force: yes
+              register: clusterpolicy_cr_copied
+
+            - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy NFD CR '
+              ansible.builtin.command: >
+                {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/clusterpolicy-gpu-cluster-policy.yaml
+              ignore_errors: yes
+              when:
+                - clusterpolicy_cr_copied is defined
+                - clusterpolicy_cr_copied.rc is defined
+                - clusterpolicy_cr_copied.rc != "0"
+              register: clusterpolicy_cr_applied
+
+        - name: '{{ ansible_name_module }} | Patch NFD-Worker Daemonset to include GPU node role'
+          vars:
+            node_taint: "{{ gpunode.taint_key }}"
+            glabel: "{{ gpu_label | d('gpu', true) }}"
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch clusterpolicy gpu-cluster-policy -n nvidia-gpu-operator  --type=merge -p --type=merge -p '{"spec":{"daemonsets":{"tolerations":[{"effect":"NoSchedule","key": "{{ glabel }}","value": "{{ node_taint }}"},{"effect":"NoExecute","key": "{{ glabel }}","value": "{{ node_taint }}"}] }}}'
+          register: clusterpolicy_cr_patched
+
+        - name: '{{ ansible_name_module }} | Check if Nvidia GPU operator is properly configured'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get pods,daemonset -n nvidia-gpu-operator
+          ignore_errors: yes
+          register: nvidia_gpu_resources
+
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_infra_id
+
+    ##### Ensure GPU node label is included in the nfd-worker daemonset. If not the GPU node will not be discovered by the NFD operator
+    ### Patching the daemonset does not seem to work so we are applying an updated daemonset manifest
+    - name: '{{ ansible_name_module }} | template | Copy NFD-Worker daemonset'
+      ansible.builtin.template:
+        src: "templates/daemonset-nfd-worker.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/daemonset-nfd-worker.yaml"
+        force: yes
+      vars:
+        node_role: "{{ gpunode.role | d('worker', true) }}"
+      register: daemonset_nfdworker_config_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy NFD-Worker daemonset '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/daemonset-nfd-worker.yaml
+      register: daemonset_nfdworker_created
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for pod for nfd-worker to be created'
+      ansible.builtin.wait_for:
+        timeout: 60
+      delegate_to: localhost
+
+    ##### MIG GPU extra config ####
+    - name: '{{ ansible_name_module }} | block | Configure MIG GPU  '
+      when:
+        - gpunode.is_mig is defined
+        - gpunode.is_mig | bool
+      block:
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get  | MIG retrieve gpu nodes '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get nodes -l feature.node.kubernetes.io/pci-10de.present --no-headers | awk '{print $1}'
+          ignore_errors: yes
+          register: mig_gpu_nodes
+
+        - name: '{{ ansible_name_module }} | Configure Custom MIG Strategy'
+          when:
+            - gpunode.mig_custom_strategy_config_file is defined
+            - gpunode.mig_custom_strategy_config_file != ''
+            - gpunode.mig_custom_strategy_cm is defined
+            - gpunode.mig_custom_strategy_cm != ''
+          block:
+            - name: '{{ ansible_name_module }} | config custom strategy CM | check custom strategy CM file exist'
+              ansible.builtin.stat:
+                path: "{{ gpunode.mig_custom_strategy_config_file }}"
+              register: custom_strategy_config_file_exist
+
+            - name: '{{ ansible_name_module }} | config custom strategy | check CM exist'
+              ansible.builtin.shell: >
+                {{ openshift_cli }} get cm {{ gpunode.mig_custom_strategy_cm }} -n nvidia-gpu-operator
+              ignore_errors: true
+              register: custom_strategy_cm_exist
+
+            - name: '{{ ansible_name_module }} | create custom stragety CM'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create configmap {{ gpunode.mig_custom_strategy_cm }} --from-file={{ gpunode.mig_custom_strategy_config_file }} -n nvidia-gpu-operator
+              when:
+                - custom_strategy_config_file_exist is defined
+                - custom_strategy_config_file_exist.stat is defined
+                - custom_strategy_config_file_exist.stat.isreg is defined
+                - custom_strategy_config_file_exist.stat.isreg | bool
+                - custom_strategy_cm_exist is defined
+                - custom_strategy_cm_exist.rc is defined
+                - custom_strategy_cm_exist.rc > 0
+              register: custom_strategy_cm_created
+
+            - name: '{{ ansible_name_module }} | Apply Custom MIG Strategy to cluster policy'
+              ansible.builtin.command: >
+                {{ openshift_cli }} patch clusterpolicy/gpu-cluster-policy --type='json' -p='[{"op": "replace", "path": "/spec/migManager/config/name", "value": "{{ gpunode.mig_custom_strategy_cm }}" }]'
+              register: mig_strategy_configured
+
+        - name: '{{ ansible_name_module }} | Configure MIG Strategy'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch clusterpolicy/gpu-cluster-policy --type='json' -p='[{"op": "replace", "path": "/spec/mig/strategy", "value": "{{ gpunode.mig_strategy }}" }]'
+          when:
+            - gpunode.mig_strategy is defined
+            - gpunode.mig_strategy != ''
+            - mig_gpu_nodes is defined
+            - mig_gpu_nodes.rc is defined
+            - mig_gpu_nodes.rc == 0
+            - mig_gpu_nodes.stdout_lines is defined
+            - mig_gpu_nodes.stdout_lines | length > 0
+          register: mig_strategy_configured
+
+        - name: '{{ ansible_name_module }} | Configure MIG Geometry for node'
+          when:
+            - gpunode.mig_geoconfig is defined
+            - gpunode.mig_geoconfig != ''
+            - mig_gpu_nodes is defined
+            - mig_gpu_nodes.rc is defined
+            - mig_gpu_nodes.rc == 0
+            - mig_gpu_nodes.stdout_lines is defined
+            - mig_gpu_nodes.stdout_lines | length > 0
+          block:
+            - name: '{{ ansible_name_module }} | apply mig geo config to nodes'
+              ansible.builtin.command: >
+                {{ openshift_cli }} label nodes/{{ item }} nvidia.com/mig.config=gpunode.mig_geoconfig --overwrite
+              loop: "{{ mig_gpu_nodes.stdout_lines }}"
+              register: mig_geoconfig_applied
+
+            - name: '{{ ansible_name_module }} | wait_for | wait for mig-manager pod to perform reconfig'
+              ansible.builtin.wait_for:
+                timeout: 30
+              delegate_to: localhost
+
+            - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get  | retrieve MIG geo label '
+              ansible.builtin.shell: >
+                {{ openshift_cli }} get nodes/{{ item }} --show-labels | tr ',' '\n' | egrep 'nvidia.com|mig'
+              ignore_errors: yes
+              loop: "{{ mig_gpu_nodes.stdout_lines }}"
+              register: mig_gpu_labels
+
+            - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get  | retrieve allocatable GPU '
+              ansible.builtin.shell: >
+                {{ openshift_cli }} get nodes/{{ item }} -ojsonpath={.status.allocatable} | jq . | grep nvidia
+              ignore_errors: yes
+              loop: "{{ mig_gpu_nodes.stdout_lines }}"
+              register: mig_allocatable_gpus
+
+           ###################### End MIG Config ###################################
+
+              #### GPU Test Sample app deployment  ###
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get  | retrieve gpu nodes '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get nodes -l feature.node.kubernetes.io/pci-10de.present --no-headers
+      register: gpu_nodes
+
+    - name: '{{ ansible_name_module }} | block | Deploy GPU sample to test GPU config '
+      when:
+        - test_gpu_config is defined
+        - test_gpu_config | bool
+        - gpu_nodes is defined
+        - gpu_nodes.rc is defined
+        - gpu_nodes.rc == 0
+        - gpu_nodes.stdout_lines is defined
+        - gpu_nodes.stdout_lines | length > 0
+      block:
+        - name: '{{ ansible_name_module }} | template | Copy gpu sample app pod template to staging location'
+          vars:
+            node_taint: "{{ gpunode.taint_key }}"
+            gpu_label: "{{ gpunode.role | d('gpu', true) }}"
+          ansible.builtin.template:
+            src: "templates/gpu-sample-pod.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/gpu-sample-pod.yml"
+            force: yes
+          register: gpu_sample_pod_config_copied
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy gpu sample app'
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/gpu-sample-pod.yml
+          register: gpu_sample_pod_config_created
+
+        - name: '{{ ansible_name_module }} | wait_for | wait for pod to be created and test to run'
+          ansible.builtin.wait_for:
+            timeout: 30
+          delegate_to: localhost
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} logs | retrieve sample gpu app logs'
+          ansible.builtin.command: >
+            {{ openshift_cli }} logs {{ gpu_sample_container_name | default('cuda-vectoradd', true) }}  -n nvidia-gpu-operator
+          register: gpu_sample_pod_test_output
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | retrieve sample gpu app pod'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get po {{ gpu_sample_container_name | default('cuda-vectoradd', true) }} -n nvidia-gpu-operator | awk '{print $1}'
+          ignore_errors: yes
+          register: gpu_sample_pod
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} delete | remove sample gpu app pod'
+          ansible.builtin.command: >
+            {{ openshift_cli }} delete {{ gpu_sample_pod.stdout }} -n nvidia-gpu-operator
+          ignore_errors: yes
+          when:
+            - gpu_sample_pod is defined
+            - gpu_sample_pod.rc is defined
+            - gpu_sample_pod.rc == 0
+            - gpu_sample_pod.stdout is defined
+            - gpu_sample_pod.stdout != ""
+          register: gpu_sample_pod_deleted
