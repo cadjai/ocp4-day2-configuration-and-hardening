@@ -301,6 +301,36 @@
                     {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/trident',true) }}/.dockerconfigjson -n trident --confirm=true
                   register: pull_secret_created
 
+        - name: '{{ ansible_name_module }} | Configure default tbc_backend_secret_name for trident'
+          when:
+            - tbc_backend_username is defined
+            - tbc_backend_username != '' 
+            - tbc_backend_password is defined
+            - tbc_backend_password != '' 
+            - not tbc_backend_secret_name is defined or tbc_backend_secret_name == ''
+          block:
+            - name: '{{ ansible_name_module }} | Get  TBC secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} get secret {{ tbc_backend_secret_name | default('backend-tbc-ontap-nas-advanced-secret', true) }} -n trident
+              ignore_errors: yes
+              register: tbc_secret_exist
+
+            - name: '{{ ansible_name_module }} | Remove existing TBC secret'
+              when:
+                - tbc_secret_exist.rc is defined
+                - tbc_secret_exist.rc == 0
+                - tbc_secret_exist.stdout is defined
+                - tbc_secret_exist.stdout != '' 
+              block:
+                - name: '{{ ansible_name_module }} | Delete existing trident pull secret'
+                  ansible.builtin.command: >
+                    {{ openshift_cli }} delete secret {{ tbc_backend_secret_name | default('backend-tbc-ontap-nas-advanced-secret', true) }} -n trident
+
+                - name: '{{ ansible_name_module }} | command | Create TBC secret in trient namespace'
+                  ansible.builtin.command: >
+                    {{ openshift_cli }} create secret generic {{ tbc_backend_secret_name | default('backend-tbc-ontap-nas-advanced-secret', true) }} --from-literal=username={{ tbc_backend_username }} --from-literal=password={{ tbc_backend_password }} -n trident --confirm=true
+                  register: tbc_secret_created
+
         - name: '{{ ansible_name_module }} | Create Operator CRD'
           ansible.builtin.command: >
             {{ openshift_cli }} create -f '{{ orchestrator_file }}'
