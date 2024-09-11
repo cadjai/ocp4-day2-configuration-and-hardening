@@ -5,6 +5,7 @@ metadata:
   namespace: nvidia-gpu-operator
 spec:
   daemonsets:
+{% if apply_node_taint is defined and apply_node_taint | bool %}
     tolerations:
     - effect: NoSchedule
       key: {{ gpu_label | default('gpu', true) }} 
@@ -12,6 +13,7 @@ spec:
     - effect: NoExecute
       key: {{ gpu_label | default('gpu', true) }}
       value: {{ node_taint }}
+{% endif %}
     rollingUpdate:
       maxUnavailable: "1"
     updateStrategy: RollingUpdate
