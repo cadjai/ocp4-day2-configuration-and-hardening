@@ -10,18 +10,18 @@
     ansible_name_module: " Post Cluster Installation | Configure Trident Driver | {{ module }}"
   pre_tasks:
     - name: Install required pip library
-      pip:
+      ansible.builtin.pip:
         name: openshift
         state: present
 
     - name: Ensure Proper Python dependency is installed for Openshift
-      python_requirements_facts:
+      community.general.python_requirements_facts:
         dependencies:
           - openshift
           - requests
  
     - name: Authenticate with the API
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} login \
           -u {{ ocp_cluster_user }} \
           -p {{ ocp_cluster_user_password }} \
@@ -32,13 +32,13 @@
       when:
         - not use_default_manifests is defined or not use_default_manifests | bool
       block:
-        - assert:
+        - ansible.builtin.assert:
             that:
               - trident_binary_file is defined and trident_binary_file != ''
             msg: " the Trident driver archive location on the controller node is required and non empty"
           when:
             - not trident_remote_url is defined or trident_remote_url == ''
-        - assert:
+        - ansible.builtin.assert:
             that:
               - trident_remote_url is defined and trident_remote_url != ''
             msg: " the Trident driver archive remote URL location is required and non empty with its protocol (e.g. http)"
@@ -56,7 +56,7 @@
             - trident_remote_url != '' 
           block:
             - name: '{{ ansible_name_module }} | Download Trident binary'
-              get_url:
+              ansible.builtin.get_url:
                 url: "{{ trident_remote_url }}"
                 dest: "{{ trident_binary_file }}"
                 username: "{{ vault_registry_admin_username }}"
@@ -67,7 +67,7 @@
                 - use_basic_auth | bool 
 
             - name: '{{ ansible_name_module }} | Download Trident binary'
-              get_url:
+              ansible.builtin.get_url:
                 url: "{{ trident_remote_url }}"
                 dest: "{{ trident_binary_file }}"
               when:
@@ -79,7 +79,7 @@
             get_checksum: false
           register: trident_driver_archive_file_exist
 
-        - assert:
+        - ansible.builtin.assert:
             that:
               - trident_driver_archive_file_exist.stat is defined 
               - trident_driver_archive_file_exist.stat.exists is defined 
@@ -94,13 +94,13 @@
             mode: 0755
 
         - name: '{{ ansible_name_module }} | Unpack Trident binary'
-          unarchive:
+          ansible.builtin.unarchive:
             src: "{{ trident_binary_file }}"
             dest: "{{ staging_dir | default('/tmp/trident',true) }}"
           register: trident_driver_extracted
 
         - name: '{{ ansible_name_module }} | Print bundle Unpack output'
-          debug:
+          ansible.builtin.debug:
             var: trident_driver_extracted
             verbosity: 2
 
@@ -369,7 +369,7 @@
           ignore_errors: yes
           register: helm_binary
 
-        - assert:
+        - ansible.builtin.assert:
             that:
               - helm_binary is defined 
               - helm_binary.rc is defined 
@@ -379,7 +379,7 @@
             msg: " the helm binary need to be installed on the controller before this install method can be used"
 
         - name: '{{ ansible_name_module }} | Print warning output'
-          debug:
+          ansible.builtin.debug:
             msg: "Ensure you have created a values.yaml file to be used along with apporpriate overwrites especially for image and registry information."
 
         - name: '{{ ansible_name_module }} | template | Copy values template to staging location'
@@ -394,7 +394,7 @@
             get_checksum: false
           register: trident_driver_values_file_exist
 
-        - assert:
+        - ansible.builtin.assert:
             that:
               - trident_driver_values_file_exist.stat is defined 
               - trident_driver_values_file_exist.stat.exists is defined 
@@ -460,7 +460,7 @@
           register: tbc_files_exist
 
         - name: '{{ ansible_name_module }} | debug | Print TBC Backend files exist Check output'
-          debug:
+          ansible.builtin.debug:
             var: item
             verbosity: 2
           loop: "{{ tbc_files_exist.results }}"
@@ -477,12 +477,54 @@
             - item.stat.exists.path is defined
           register: trident_tbc_created 
 
+        - name: '{{ ansible_name_module }} | Retrieve created Trident Backend Config'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get tbc -n trident --no-headers | awk '{ print $1 " " $4 " " $5}'
+          when:
+            - trident_tbc_created is defined
+            - trident_tbc_created.rc is defined
+            - trident_tbc_created.rc == 0 
+          register: created_tbcs
+
+        - name: '{{ ansible_name_module }} | set_fact | trident backend config file fact'
+          ansible.builtin.set_fact:
+            failed_tbcs: "{{ failed_tbcs | default([],true) + [{'name': item.split(' ')[0], 'phase': item.split(' ')[1], 'status': item.split(' ')[2]}] }}"
+          loop: "{{ created_tbcs.stdout_lines }}"
+          when:
+            - created_tbcs is defined
+            - created_tbcs.stdout_lines is defined
+            - created_tbcs.stdout_lines | length > 0 
+            - "not 'Bound' in item and not 'Success' in item"
+          register: failed_tbcs
+
+        - name: '{{ ansible_name_module }} | Print failed TBC output Backend '
+          ansible.builtin.debug:
+            var: failed_tbcs
+          when:
+            - failed_tbcs is defined
+            - failed_tbcs | length > 0
+
     ##################### Create Trident t ###################################
     - name: '{{ ansible_name_module }} | Create Trident Storage classes if necessary'
       when:
         - create_trident_sc is defined
         - create_trident_sc | bool
       block:
+        - name: '{{ ansible_name_module }} | Retrieve created Trident Backend Config'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get tbc -n trident --no-headers | awk '{ print $1 " " $4 " " $5}'
+          ignore_errors: 'true'
+          register: tbcs_exist
+
+        - ansible.builtin.assert:
+            that:
+              - tbcs_exist is defined
+              - tbcs_exist.stdout is defined
+              - tbcs_exist.stdout_lines is defined
+              - tbcs_exist.stdout_lines | length > 0 
+              - "not 'failed' in tbcs_exist.stdout"
+            msg: "There needs to be at least a bound Trident Backend Config before a Trident storage class can be created"
+
         - name: '{{ ansible_name_module }} | Use default Trident Storage Class'
           when:
             - not trident_sc_files is defined or trident_sc_files | length == 0
@@ -511,7 +553,7 @@
           register: tbc_sc_files_exist
 
         - name: '{{ ansible_name_module }} | debug | Print SC files exist Check output'
-          debug:
+          ansible.builtin.debug:
             var: item
             verbosity: 2
           loop: "{{ tbc_sc_files_exist.results }}"

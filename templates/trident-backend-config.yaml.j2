@@ -15,15 +15,6 @@ spec:
   limitAggregateUsage: 80%
   limitVolumeSize: {{ tbc_backend_volume_size | default('50Gi', true) }}
   nfsMountOptions: {{ tbc_backend_nfs_mount_options | default('nfsvers=4', true) }}
-  defaults:
-    spaceReserve: {{ tbc_backend_space_reserve | default('volume', true) }}
-    encryption: {{ tbc_backend_volume_encryption_enabled | default('false', true) }}
-{% if tbc_backend_volume_export_policy is defined and tbc_backend_volume_export_policy != '' %}
-    exportPolicy: {{ tbc_backend_volume_export_policy }}
-{% endif %}
-    snapshotPolicy: {{ tbc_backend_volume_snapshot_policy | default('default', true) }}
-    snapshotReserve: '10'
-  deletionPolicy: retain
 {% if configure_pv_auto_export is defined and configure_pv_auto_export | bool %}
 {% if machine_cidr is defined and machine_cidr | default([], true) | length > 0 %}
   autoExportCIDRs:
@@ -33,3 +24,14 @@ spec:
   autoExportPolicy: true
 {% endif %}
 {% endif %}
+  storagePrefix: {{ tbc_backend_storage_prefix | default('openshift', true} }}
+  useREST: {{ tbc_backend_use_restapi | default('false', true) }}
+  deletionPolicy: retain
+  defaults:
+    spaceReserve: {{ tbc_backend_space_reserve | default('volume', true) }}
+    encryption: '{{ tbc_backend_volume_encryption_enabled | default("false", true) }}'
+{% if tbc_backend_volume_export_policy is defined and tbc_backend_volume_export_policy != '' %}
+    exportPolicy: '{{ tbc_backend_volume_export_policy }}'
+{% endif %}
+    snapshotPolicy: {{ tbc_backend_volume_snapshot_policy | default('default', true) }}
+    snapshotReserve: '10'
