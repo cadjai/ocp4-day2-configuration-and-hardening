@@ -1,14 +1,47 @@
-apiVersion: logging.openshift.io/v1
+apiVersion: "logging.openshift.io/v1"
 kind: ClusterLogForwarder
 metadata:
-  name: instance
-  namespace: openshift-logging
+  name: instance 
+  namespace: openshift-logging 
 spec:
+  outputs:
+{% if forward_to_splunk is defined and forward_to_splunk | bool %}
+   - name: openshift-logforwarding-splunk 
+     type: fluentdForward
+     url: tls://{{ splunk_endpoint | default('openshift-logforwarding-splunk.openshift-logging.svc'}}:{{ splunk_endpoint_port | default('24224') }}
+     secret:
+        name: openshift-logforwarding-splunk
+{% endif %}
+  inputs: 
   pipelines:
-  - name: all-to-default
-    inputRefs:
-    - infrastructure
-    - application
-    - audit
-    outputRefs:
-    - default
+   - name: audit-logs 
+     inputRefs:
+      - audit
+     outputRefs:
+      - default
+{% if forward_to_splunk is defined and forward_to_splunk | bool %}
+      - openshift-logforwarding-splunk
+{% endif %}
+     parse: json 
+     labels:
+       datacenter: "default"
+   - name: infrastructure-logs 
+     inputRefs:
+      - infrastructure
+     outputRefs:
+      - default
+{% if forward_to_splunk is defined and forward_to_splunk | bool %}
+      - openshift-logforwarding-splunk
+{% endif %}
+     parse: json 
+     labels:
+       datacenter: "default"
+   - name: application-logs 
+     inputRefs:
+      - application
+     outputRefs:
+      - default
+{% if forward_to_splunk is defined and forward_to_splunk | bool %}
+      - openshift-logforwarding-splunk
+{% endif %}
+     parse: json 
