@@ -1,20 +1,9 @@
 - name: ' Configure Cluster Update Service  | deploy-update-service-application.yml'
   hosts: localhost
-  become: yes
   vars:
     ansible_python_interpreter: /usr/bin/python3
     module: "Deploy Cluster Update Service Application"
     ansible_name_module: "Configure Update Service in disconnected | {{ module }}"
-    #trust_ingress_ca: 'false'
-    #existing_ca_bundle_cm_name: 'default-ingress-cert'
-    #existing_ca_bundle_cm_namespace: 'openshift-config-managed'
-    #new_ca_bundle_cm_name: 'default-ingress-cert-ca'
-    #new_ca_bundle_cm_namespace: 'openshift-config'
-    #create_new_ca_bundle_cm: 'true'
-    #new_ca_bundle_cm_file: '/tmp/default-ingress-ca.crt'
-    #update_new_ca_bundle_cm_namespace: 'true'
-    #existing_ca_bundle_cert_key: ''
-    #new_ca_bundle_cert_key: ''
   vars_files:
     - 'vars/vault.yml'
     - 'vars/global.yml'
@@ -32,14 +21,14 @@
 
     - name: '{{ ansible_name_module }} | Ensure required variables are set'
       block:
-        - assert:
+        - ansible.builtin.assert:
             that:
               - registry_ca_file is defined and registry_ca_file != ''
             msg: " the registry_ca_file must be set to a valid pem certificate file path "
 
         ### This is to handle cases where the file might be in a relative path
         - name: '{{ ansible_name_module }} | check registry cert file'
-          set_fact:
+          ansible.builtin.set_fact:
             registry_ca_file_path: "{{ registry_ca_file if registry_ca_file is regex('^/') else '../' + registry_ca_file }}"
 
         - name: '{{ ansible_name_module }} | check registry cert file'
@@ -47,7 +36,7 @@
             path: "{{ registry_ca_file_path }}"
           register: registry_ca_file_exist
 
-        - assert:
+        - ansible.builtin.assert:
             that:
               - registry_ca_file_exist.stat is defined
               - registry_ca_file_exist.stat.isreg is defined
@@ -55,7 +44,7 @@
             msg: " the registry_ca_file must be set to a valid pem certificate file path "
 
     - name: Authenticate with the API
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} login \
           --token {{ ocp_cluster_token }} \
           --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
@@ -64,7 +53,7 @@
       register: login_out
 
     - name: Authenticate with the API
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} login \
           -u {{ ocp_cluster_user }} \
           -p {{ ocp_cluster_user_password }} \
@@ -76,28 +65,62 @@
     - name: '{{ ansible_name_module }} | Ensure required required channel is properly set'
       block:
         - name: '{{ ansible_name_module }} | import_tasks | Conditional import of ocp-cluster-login role'
-          command: >
+          ansible.builtin.command: >
              {{ openshift_cli }} version -ojson | jq .openshiftVersion
           register: clusterversion
 
-        - assert:
+        - ansible.builtin.assert:
              that:
                - current_ocp_release_channel is defined and current_ocp_release_channel != ""
                - current_ocp_release_channel is version(clusterversion.stdout, '>')
              msg: " the current_ocp_release_channel must be set and valid and greater than the current version"
 
+    - name: '{{ ansible_name_module }} | set_fact | Set Registry CA Bundle CM Name '
+      ansible.builtin.set_fact:
+        registry_ca_cm_name: '{{ registry_ca_bundle_cm_name | default("registry-cas", true) }}'
+
     - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create update service CA'
-      import_role:
+      ansible.builtin.import_role:
         name: copy-user-ca-bundle-cm-into-new-ca-bundle
         tasks_from: create-additional-ca-cm-for-registries.yml
       vars:
         registries_trust_stores:
-          artifactory:
+          update-service-registry:
             fqdn: 'updateservice-registry'
             port: ''
             ca_file_pem: '{{ registry_ca_file_path }}'
-            #ca_file_pem: './registry.crt'
-        registry_ca_bundle_cm_name: 'artifactory-registry-ca'
+          external-registry:
+            fqdn: '{{ registry_host_fqdn }}'
+            port: '{{ registry_host_port | default('', true) }}'
+            ca_file_pem: '{{ registry_ca_file_path }}'
+        registry_ca_bundle_cm_name: '{{ registry_ca_cm_name }}'
+
+    - name: Add empty ConfigMap to use as CA injection CM
+      ansible.builtin.command: >
+        {{ openshift_cli }} create configmap registry-ca-bundle -n openshift-config
+      failed_when:
+        - empty_cm_created.rc is defined
+        - empty_cm_created.rc >= 1
+        - empty_cm_created.stderr is defined
+        - " not  'already exists' in empty_cm_created.stderr "
+      register: empty_cm_created
+
+    - name: Add label to empty ConfigMap created above to use as CA injection CM
+      ansible.builtin.command: >
+        {{ openshift_cli }} label configmap registry-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config --overwrite=true
+      failed_when:
+        - ca_cm_injection_updated.rc is defined
+        - ca_cm_injection_updated.rc >= 1
+        - ca_cm_injection_updated.stderr is defined
+        - " not 'already has a' in ca_cm_injection_updated.stderr "
+      register: ca_cm_injection_updated
+
+    - name: Patch Image Registry Config
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch image.config.openshift.io cluster --type=merge --patch='{"spec":{"additionalTrustedCA":{"name": "{{ registry_ca_cm_name }}"}}}'
+      when:
+        - patch_internal_registry_config is defined
+        - patch_internal_registry_config | bool 
 
     ##### This is being added to fix or workaround what seems to be a bug where OpenShift Cluster does not trust the Ingress CA ####
     # That is needed to provide the clusterversion the ability to pull graph for update from the OpenShift Update Service, 
@@ -108,17 +131,17 @@
         - trust_ingress_ca | bool
       block:
         - name: '{{ ansible_name_module }} | import_tasks | Conditional import of main.yml to create Ingress CA in openshift-config NS to trust it'
-          import_role:
+          ansible.builtin.import_role:
             name: copy-user-ca-bundle-cm-into-new-ca-bundle
             tasks_from: main.yml
             registry_ca_bundle_cm_name: 'artifactory-registry-ca'
 
         - name: Patch Proxy Config
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name": "{{ new_ca_bundle_cm_name }}"}}}'
 
         - name: Add empty ConfigMap to use as CA injection CM
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} create configmap ingress-ca-bundle -n openshift-config
           failed_when:
             - empty_cm_created.rc is defined
@@ -129,7 +152,7 @@
 
 
         - name: Add label to empty ConfigMap created above to use as CA injection CM
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} label configmap ingress-ca-bundle config.openshift.io/inject-trusted-cabundle=true -n openshift-config --overwrite=true
           failed_when:
             - ca_cm_injection_updated.rc is defined
@@ -140,18 +163,18 @@
 
   tasks:
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} | Render Update Service Application CR'
-      template:
+      ansible.builtin.template:
         src: "templates/update-service-cr.yml.j2"
         dest: "{{ staging_dir | d('/tmp', true) }}/update-service-cr.yml"
         force: yes
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | Update Service Application CR '
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/update-service-cr.yml -n openshift-update-service
       register: update_svc_application_deployed
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get Update Service Application route '
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} get updateservice {{ update_graphdata_application_name }} -o jsonpath='{.status.policyEngineURI}/api/upgrades_info/v1/graph{"\n"}' -n openshift-update-service
       register: update_svc_graph_route_retrieved
       until:
@@ -163,7 +186,7 @@
       changed_when: false
 
     - name: '{{ ansible_name_module }} | command | Retrieve Update Service Application Hostname '
-      set_fact:
+      ansible.builtin.set_fact:
         ous_host: "{{ (update_svc_graph_route_retrieved.stdout.split('https://')[1]).split('/')[0] }}"
         ous_host_port: "{{ (update_svc_graph_route_retrieved.stdout.split('https://')[1]).split('/')[0] }}:443"
       when:
@@ -171,7 +194,7 @@
         - update_svc_graph_route_retrieved.stdout != ''
 
     - name: '{{ ansible_name_module }} | shell:openssl:s_client | Retrieve Update Service Application CA Certificate '
-      shell: >
+      ansible.builtin.shell: >
          openssl s_client -showcerts -connect {{ ous_host_port }} \
           < /dev/null | sed -ne '/-BEGIN CERTIFICATE/,/END CERTIFICATE/p' \
           > /tmp/ous-ca.crt
@@ -185,7 +208,7 @@
 
 
     - name: '{{ ansible_name_module }} | shell:curl | Retrieve Update Service Application Graph '
-      shell: >
+      ansible.builtin.shell: >
         curl --cacert /tmp/ous-ca.crt --header Accept:application/json \
           --output /dev/stderr \
           --write-out "%{http_code}" \
@@ -206,7 +229,7 @@
       changed_when: false
 
     - name: '{{ ansible_name_module }} | update cluster service version'
-      command: >
+      ansible.builtin.command: >
         {{ openshift_cli }} patch clusterversion version --type=merge -p '{"spec": {"upstream": "{{ update_svc_graph_route_retrieved.stdout }}","channel": "{{ current_ocp_release_channel }}" }}'
       when:
         - update_svc_graph is defined
