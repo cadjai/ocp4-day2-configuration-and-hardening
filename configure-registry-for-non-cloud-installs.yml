@@ -1,0 +1,209 @@
+- name: 'Configure Internal Registry on Non Cloud installs | configure-registry-for-non-cloud-installs.yml'
+  hosts: localhost
+  become: yes
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+   #ansible_python_interpreter: /usr/bin/python3
+    module: "configure-gpunodes"
+    ansible_name_module: "Provision Cluster Infra | {{ module }}"
+  pre_tasks:
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies: 
+          - openshift
+          - requests 
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Configure default pullsecret for image registry'
+      block:
+        - name: '{{ ansible_name_module }} | Get Existing pull secret from openshift config'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get secret pull-secret -n openshift-config
+          ignore_errors: yes
+          register: pull_secret_exist
+
+        - name: '{{ ansible_name_module }} | Create pull secret for external registry'
+          when:
+            - pull_secret_exist.rc is defined
+            - pull_secret_exist.rc == 0
+            - pull_secret_exist.stdout is defined
+            - pull_secret_exist.stdout != ''
+          block:
+            - name: '{{ ansible_name_module }} | Get Existing image registry pull secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} get secret pull-secret -n openshift-image-registry
+              ignore_errors: yes
+              register: image_registry_pull_secret_exist
+
+            - name: '{{ ansible_name_module }} | Delete existing image registry pull secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} delete secret pull-secret -n openshift-image-registry
+              when:
+                - image_registry_pull_secret_exist.rc is defined
+                - image_registry_pull_secret_exist.rc == 0
+                - image_registry_pull_secret_exist.stdout is defined
+                - image_registry_pull_secret_exist.stdout != ''
+
+            - name: '{{ ansible_name_module }} | command | Extract existing pull secret file'
+              ansible.builtin.command: >
+                {{ openshift_cli }} extract secret/pull-secret -n openshift-config --to={{ staging_dir | default('/tmp/manifests',true) }}
+              register: pull_secret_extracted
+
+            - name: '{{ ansible_name_module }} | command | Create pull secret in trient namespace'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/manifests',true) }}/.dockerconfigjson -n openshift-image-registry --confirm=true
+              register: pull_secret_created
+
+    - name: '{{ ansible_name_module }} | Configure image registry to pull from external registry'
+      when:
+        - configure_addl_ca is defined
+        - configure_addl_ca | bool 
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | Set Registry CA Bundle CM Name '
+          ansible.builtin.set_fact:
+            registry_ca_cm_name: '{{ registry_ca_bundle_cm_name | default("external-registry-cas", true) }}'
+
+        - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create update service CA'
+          ansible.builtin.import_role:
+            name: copy-user-ca-bundle-cm-into-new-ca-bundle
+            tasks_from: create-additional-ca-cm-for-registries.yml
+          vars:
+            registries_trust_stores:
+              external-registry:
+                fqdn: '{{ registry_host_fqdn }}'
+                port: '{{ registry_host_port | default('', true) }}'
+                ca_file_pem: '{{ registry_ca_file_path }}'
+            registry_ca_bundle_cm_name: '{{ registry_ca_cm_name }}'
+
+    - name: '{{ ansible_name_module }} | Configure storage credentials for internalregistry'
+      when:
+        - configure_storage_credential is defined
+        - configure_storage_credential | bool 
+        - storage_access_key is defined
+        - storage_access_key != ''
+        - storage_access_secret is defined 
+        - storage_access_secret != '' 
+        - storage_bucket_name is defined
+        - storage_bucket_name != '' 
+        - storage_bucket_s3_endpoint is defined
+        - storage_bucket_s3_endpoint != '' 
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | S3 storage endpoint URL'
+          ansible.builtin.set_fact:
+            storage_s3_url: "{{ storage_bucket_s3_endpoint if ('http://' in storage_bucket_s3_endpoint or 'https://' in storage_bucket_s3_endpoint) else 'https://' + storage_bucket_s3_endpoint }}"
+
+        - name: '{{ ansible_name_module }} | Set S3 storage endpoint CA bundle CM name'
+          when:
+            - "'https://' in storage_s3_url"
+            - not storage_s3_CA is defined or storage_s3_CA == ''
+          block:
+          ### Retrieve CA bundle name by querying the image.config.openshift.io cluster
+            - name: '{{ ansible_name_module }} | Get Existing image registry storage credential secret'
+              ansible.builtin.command: >
+                {{ openshift_cli }} get image.config.openshift.io cluster -o jsonpath='{.spec.additionalTrustedCA.name}{"\n"}'
+              ignore_errors: true
+              register: registry_addl_ca 
+
+            - name: '{{ ansible_name_module }} | set_fact | S3 storage endpoint CA'
+              ansible.builtin.set_fact:
+                storage_s3_CA: "{{ registry_addl_ca.sdtout }}"
+              when:
+                - registry_addl_ca is defined 
+                - registry_addl_ca.rc is defined 
+                - registry_addl_ca.rc == 0 
+                - registry_addl_ca.stdout is defined 
+                - registry_addl_ca.stdout != '' 
+
+        - name: '{{ ansible_name_module }} | Get Existing image registry storage credential secret'
+          ansible.builtin.command: >2yy
+            {{ openshift_cli }} get secret image-registry-private-configuration-user -n openshift-image-registry
+          ignore_errors: yes
+          register: registry_storage_cred_secret_exist
+
+        - name: '{{ ansible_name_module }} | Delete existing image registry storage credential secret'
+          ansible.builtin.command: >
+            {{ openshift_cli }} delete secret image-registry-private-configuration-user -n openshift-image-registry
+          when:
+            - registry_storage_cred_secret_exist.rc is defined
+            - registry_storage_cred_secret_exist.rc == 0
+            - registry_storage_cred_secret_exist.stdout is defined
+            - registry_storage_cred_secret_exist.stdout != ''
+
+        - name: '{{ ansible_name_module }} | set_fact | storage credential access key name'
+          ansible.builtin.set_fact:
+            storage_access_key_name: "REGISTRY_STORAGE_S3_ACCESSKEY"
+          when:
+            - not storage_access_key_name is defined or storage_access_key_name == ""
+
+        - name: '{{ ansible_name_module }} | set_fact | storage credential access key name'
+          ansible.builtin.set_fact:
+            storage_access_secret_name: "REGISTRY_STORAGE_S3_SECRETKEY"
+          when:
+            - not storage_access_secret_name is defined or storage_access_secret_name == ""
+
+        - name: '{{ ansible_name_module }} | command | Create image registry storage credential secret'
+          ansible.builtin.command: >
+            {{ openshift_cli }} create secret generic image-registry-private-configuration-user \
+              --from-litteral={{ storage_access_key_name }}={{ storage_access_key }} \
+              --from-litteral={{ storage_access_secret_name }}={{ storage_access_secret }} \
+               -n openshift-image-registry --confirm=true
+          register: registry_storage_cred_secret_created
+
+        - name: '{{ ansible_name_module }} | Patch Image Registry Storage Config S3'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"managementState": "Managed","storage":{"s3":{"bucket": "{{ storage_bucket_name }}", "region": {{ s3_regison_strg }}, "regionEndpoint": "{{ storage_bucket_s3_endpoint }}"{{ s3_ca_strg }}}}}}'
+          when:
+            - registry_storage_cred_secret_created is defined
+            - registry_storage_cred_secret_created.rc is defined
+            - registry_storage_cred_secret_created.rc == 0 
+          vars:
+            s3_ca_strg: "{{ ', \"trustedCA\": {\"name\":\"' + storage_s3_CA + '\"' if storage_s3_CA is defined and storage_s3_CA != '' else ''}}"
+            s3_regison_strg: "{{ storage_s3_region if storage_s3_region is defined and storage_s3_region != '' else 'us-east-1'}}"
+
+    - name: '{{ ansible_name_module }} | Configure persistent storage for internal registry'
+      when:
+        - configure_pvc is defined
+        - configure_pvc | bool 
+        - registry_pvc is defined
+        - registry_pvc != '' 
+      block:
+        - name: '{{ ansible_name_module }} | Get Existing pvc'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get pvc {{ registry_pvc }} -n openshift-image-registry --no-header
+          ignore_errors: 'true'
+          register: registry_pvc_exist
+
+        - name: '{{ ansible_name_module }} | Patch Image Registry PVC Config'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"managementState": "Managed","storage":{"pvc":{"claim": "{{ registry_pvc }}"}}}}'
+      when:
+        - registry_pvc_exist is defined
+        - registry_pvc_exist.rc is defined
+        - registry_pvc_exist.rc == 0 
+        - registry_pvc_exist.stdout is defined
+        - registry_pvc_exist.stdout != ''
+        - "registry_pvc in registry_pvc_exist.stdout" 
+
+    - name: '{{ ansible_name_module }} | Configure persistent storage for internal registry'
+      when:
+        - expose_internal_registry_route is defined
+        - expose_internal_registry_route | bool 
+      block:
+        - name: '{{ ansible_name_module }} | Expose registry route'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"defaultRoute": "true"}}'
