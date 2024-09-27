@@ -81,12 +81,12 @@
       when:
         - not gpu_nodes is defined or gpu_nodes == '' or gpu_nodes | default([]) | length == 0
       block:
-        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get machine | get infra machine'
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get machine | get GPU machine'
           ansible.builtin.shell: >
             {{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | awk '{print $1}'
           register: gpu_machines
 
-        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get machine | get infra machine node names'
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get machine | get GPU machine node names'
           ansible.builtin.command: >
             {{ openshift_cli }} get machine {{ item }} -o=jsonpath='{.status.nodeRef.name}{"\n"}' -n openshift-machine-api
           when:
@@ -97,13 +97,50 @@
           loop: "{{ gpu_machines.stdout_lines }}"
           register: gpu_node_names
 
-        - name: '{{ ansible_name_module }} | set_fact | set infra node label'
+        - name: '{{ ansible_name_module }} | set_fact | set GPU node label'
           set_fact:
             gpu_nodes: "{{ gpu_nodes | default([], true) + [item.stdout] }}"
           loop: "{{ gpu_node_names.results }}"
           when:
             - gpu_node_names.results is defined
             - gpu_node_names.results | length > 0 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get nodes | get node names'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get nodes --no-headers
+          when:
+            - not gpu_machines is defined or gpu_machines.stdout_lines == "" or gpu_machines.stdout_lines | length == 0
+          register: gpu_node_names
+
+        - name: '{{ ansible_name_module }} | set_fact | set GPU node label'
+          set_fact:
+            gpu_nodes: "{{ gpu_node_names.stdout_lines }}"
+          when:
+            - gpu_node_names.stdout_lines is defined
+            - gpu_node_names.stdout_lines | length > 0
+
+    - name: '{{ ansible_name_module }} | Ensure there are GPU card in the nodes before proceeding'
+      block:
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} debug | check if GPU cards are present on the nodes'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} debug -q node/{{ item}} -- chroot /host lspci | grep -i {{ gpu_card_vendor | default('nvidia', true) }} 
+          loop: "{{ gpu_nodes }}"
+          register: gpu_card_check_output
+
+        - name: '{{ ansible_name_module }} | assert | The GPU card check returns at least one card in the output'
+          ansible.builtin.assert:
+            that:
+              - item.rc is defined
+              - item.rc == 0
+              - item.stdout_lines is defined
+              - item.stdout_lines | length > 0
+              - item.stdout is defined
+              - item.stdout != ''
+            msg: "At least one GPU card is required on the node before it can be configured as a GPU node"
+          loop: "{{ gpu_card_check_output.results }}"
+          when:
+            - gpu_card_check_output.results is defined
+            - gpu_card_check_output.results | length > 0
 
     - name: '{{ ansible_name_module }} | set_fact | set gpu node label'
       set_fact:
@@ -113,7 +150,7 @@
       set_fact:
         gpu_taint_value: "{{ gpunode.taint_key | default('reserved',false) }}"
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} adm taint | taint infra nodes'
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} adm taint | taint GPU nodes'
       ansible.builtin.command: >
         {{ openshift_cli }} adm taint nodes {{ item }} {{ gpu_label }}={{ gpu_taint_value }}:NoSchedule {{ gpu_label }}={{ gpu_taint_value }}:NoExecute --overwrite=true
       loop: "{{ gpu_nodes }}"
