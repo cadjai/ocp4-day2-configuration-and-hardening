@@ -130,7 +130,7 @@
                 - registry_addl_ca.stdout != '' 
 
         - name: '{{ ansible_name_module }} | Get Existing image registry storage credential secret'
-          ansible.builtin.command: >2yy
+          ansible.builtin.command: >
             {{ openshift_cli }} get secret image-registry-private-configuration-user -n openshift-image-registry
           ignore_errors: yes
           register: registry_storage_cred_secret_exist
@@ -191,13 +191,13 @@
         - name: '{{ ansible_name_module }} | Patch Image Registry PVC Config'
           ansible.builtin.command: >
             {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"managementState": "Managed","storage":{"pvc":{"claim": "{{ registry_pvc }}"}}}}'
-      when:
-        - registry_pvc_exist is defined
-        - registry_pvc_exist.rc is defined
-        - registry_pvc_exist.rc == 0 
-        - registry_pvc_exist.stdout is defined
-        - registry_pvc_exist.stdout != ''
-        - "registry_pvc in registry_pvc_exist.stdout" 
+          when:
+            - registry_pvc_exist is defined
+            - registry_pvc_exist.rc is defined
+            - registry_pvc_exist.rc == 0 
+            - registry_pvc_exist.stdout is defined
+            - registry_pvc_exist.stdout != ''
+            - "registry_pvc in registry_pvc_exist.stdout" 
 
     - name: '{{ ansible_name_module }} | Configure persistent storage for internal registry'
       when:
