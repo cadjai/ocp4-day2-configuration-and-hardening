@@ -134,7 +134,7 @@
                 - registry_addl_ca.stdout != '' 
 
         - name: '{{ ansible_name_module }} | Get Existing image registry storage credential secret'
-          ansible.builtin.command: >2yy
+          ansible.builtin.command: >
             {{ openshift_cli }} get secret image-registry-private-configuration-user -n openshift-image-registry
           ignore_errors: yes
           register: registry_storage_cred_secret_exist
