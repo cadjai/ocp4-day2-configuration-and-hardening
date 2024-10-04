@@ -66,7 +66,7 @@
 
             - name: '{{ ansible_name_module }} | command | Create pull secret in trient namespace'
               ansible.builtin.command: >
-                {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/manifests',true) }}/.dockerconfigjson -n openshift-image-registry --confirm=true
+                {{ openshift_cli }} create secret docker-registry pull-secret --from-file=.dockerconfigjson={{ staging_dir | default('/tmp/manifests',true) }}/.dockerconfigjson -n openshift-image-registry
               register: pull_secret_created
 
     - name: '{{ ansible_name_module }} | Configure image registry to pull from external registry'
@@ -78,6 +78,10 @@
           ansible.builtin.set_fact:
             registry_ca_cm_name: '{{ registry_ca_bundle_cm_name | default("external-registry-cas", true) }}'
 
+        - name: '{{ ansible_name_module }} | set_fact | Set Registry port string fact '
+          ansible.builtin.set_fact:
+            registry_port_strg: '{{ "" if not registry_host_port is defined or registry_host_port == "" else registry_host_port }}'
+
         - name: '{{ ansible_name_module }} | import_tasks | import of create-additional-ca-cm-for-registries.yml to create update service CA'
           ansible.builtin.import_role:
             name: copy-user-ca-bundle-cm-into-new-ca-bundle
@@ -86,7 +90,7 @@
             registries_trust_stores:
               external-registry:
                 fqdn: '{{ registry_host_fqdn }}'
-                port: '{{ registry_host_port | default('', true) }}'
+                port: '{{ registry_port_strg }}'
                 ca_file_pem: '{{ registry_ca_file_path }}'
             registry_ca_bundle_cm_name: '{{ registry_ca_cm_name }}'
 
@@ -159,14 +163,14 @@
         - name: '{{ ansible_name_module }} | command | Create image registry storage credential secret'
           ansible.builtin.command: >
             {{ openshift_cli }} create secret generic image-registry-private-configuration-user \
-              --from-litteral={{ storage_access_key_name }}={{ storage_access_key }} \
-              --from-litteral={{ storage_access_secret_name }}={{ storage_access_secret }} \
-               -n openshift-image-registry --confirm=true
+              --from-literal={{ storage_access_key_name }}={{ storage_access_key }} \
+              --from-literal={{ storage_access_secret_name }}={{ storage_access_secret }} \
+               -n openshift-image-registry
           register: registry_storage_cred_secret_created
 
         - name: '{{ ansible_name_module }} | Patch Image Registry Storage Config S3'
           ansible.builtin.command: >
-            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"managementState": "Managed","storage":{"s3":{"bucket": "{{ storage_bucket_name }}", "region": {{ s3_regison_strg }}, "regionEndpoint": "{{ storage_bucket_s3_endpoint }}"{{ s3_ca_strg }}}}}}'
+            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"managementState": "Managed","storage":{"s3":{"bucket": "{{ storage_bucket_name }}", "region": "{{ s3_regison_strg }}", "regionEndpoint": "{{ storage_bucket_s3_endpoint }}"{{ s3_ca_strg }}}}}}'
           when:
             - registry_storage_cred_secret_created is defined
             - registry_storage_cred_secret_created.rc is defined
@@ -174,6 +178,23 @@
           vars:
             s3_ca_strg: "{{ ', \"trustedCA\": {\"name\":\"' + storage_s3_CA + '\"' if storage_s3_CA is defined and storage_s3_CA != '' else ''}}"
             s3_regison_strg: "{{ storage_s3_region if storage_s3_region is defined and storage_s3_region != '' else 'us-east-1'}}"
+
+        - name: '{{ ansible_name_module }} | Get Existing s3 storage config'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get configs.imageregistry.operator.openshift.io cluster -ojsonpath='{.spec.storage.pvc}' 
+          ignore_errors: 'true'
+          register: registry_pvc_config_exist
+
+        - name: '{{ ansible_name_module }} | Patch Image Registry Remove PVC Config if applicable'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type json -p='[{"op": "remove", "path": "/spec/storage/pvc"}]'
+          when:
+            - registry_pvc_config_exist is defined
+            - registry_pvc_config_exist.rc is defined
+            - registry_pvc_config_exist.rc == 0 
+            - registry_pvc_config_exist.stdout is defined
+            - registry_pvc_config_exist.stdout != '' 
+            - "'pvc' in registry_s3_config_exist.stdout"
 
     - name: '{{ ansible_name_module }} | Configure persistent storage for internal registry'
       when:
@@ -184,20 +205,37 @@
       block:
         - name: '{{ ansible_name_module }} | Get Existing pvc'
           ansible.builtin.command: >
-            {{ openshift_cli }} get pvc {{ registry_pvc }} -n openshift-image-registry --no-header
+            {{ openshift_cli }} get pvc {{ registry_pvc }} -n openshift-image-registry --no-headers
           ignore_errors: 'true'
           register: registry_pvc_exist
+
+        - name: '{{ ansible_name_module }} | Get Existing s3 storage config'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get configs.imageregistry.operator.openshift.io cluster -ojsonpath='{.spec.storage.s3}' 
+          ignore_errors: 'true'
+          register: registry_s3_config_exist
 
         - name: '{{ ansible_name_module }} | Patch Image Registry PVC Config'
           ansible.builtin.command: >
             {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type=merge --patch='{"spec":{"managementState": "Managed","storage":{"pvc":{"claim": "{{ registry_pvc }}"}}}}'
-      when:
-        - registry_pvc_exist is defined
-        - registry_pvc_exist.rc is defined
-        - registry_pvc_exist.rc == 0 
-        - registry_pvc_exist.stdout is defined
-        - registry_pvc_exist.stdout != ''
-        - "registry_pvc in registry_pvc_exist.stdout" 
+          when:
+            - registry_pvc_exist is defined
+            - registry_pvc_exist.rc is defined
+            - registry_pvc_exist.rc == 0 
+            - registry_pvc_exist.stdout is defined
+            - registry_pvc_exist.stdout != ''
+            - "registry_pvc in registry_pvc_exist.stdout" 
+
+        - name: '{{ ansible_name_module }} | Patch Image Registry Remove S3 Config if applicable'
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch configs.imageregistry.operator.openshift.io cluster --type json -p='[{"op": "remove", "path": "/spec/storage/s3"}]'
+          when:
+            - registry_s3_config_exist is defined
+            - registry_s3_config_exist.rc is defined
+            - registry_s3_config_exist.rc == 0 
+            - registry_s3_config_exist.stdout is defined
+            - registry_s3_config_exist.stdout != '' 
+            - "'s3' in registry_s3_config_exist.stdout"
 
     - name: '{{ ansible_name_module }} | Configure persistent storage for internal registry'
       when:
