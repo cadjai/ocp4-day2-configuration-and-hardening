@@ -437,6 +437,11 @@
                   - tbc_backend_data_interface_ip is defined 
                   - tbc_backend_data_interface_ip != ''
                 msg: " the Trident Backend Data Interface IP is required to be a valid non empty value"
+            - ansible.builtin.assert:
+                that:
+                  - tbc_backend_volume_export_policy is defined 
+                  - tbc_backend_volume_export_policy != ''
+                msg: " the Trident Backend Config export policy is required and should be configured to enable read and write perms. If not you will get permission denied errors witring to the volumes"
 
             - name: '{{ ansible_name_module }} | set_fact | trident backend tbc default config file fact'
               ansible.builtin.set_fact:

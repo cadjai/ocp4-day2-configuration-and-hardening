@@ -30,8 +30,6 @@ spec:
   defaults:
     spaceReserve: {{ tbc_backend_space_reserve | default('volume', true) }}
     encryption: '{{ tbc_backend_volume_encryption_enabled | default("false", true) }}'
-{% if tbc_backend_volume_export_policy is defined and tbc_backend_volume_export_policy != '' %}
     exportPolicy: '{{ tbc_backend_volume_export_policy }}'  ### ensure this is set to valid policy with valid permissions to avoid permissions denied errors
-{% endif %}
     snapshotPolicy: {{ tbc_backend_volume_snapshot_policy | default('default', true) }}
     snapshotReserve: '10'
