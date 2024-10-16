@@ -292,7 +292,20 @@
             - name: '{{ ansible_name_module }} | config custom strategy CM | check custom strategy CM file exist'
               ansible.builtin.stat:
                 path: "{{ gpunode.mig_custom_strategy_config_file }}"
+              when:
+                - gpunode.mig_custom_strategy_config_file is defined
+                - gpunode.mig_custom_strategy_config_file != ''
+                - "not 'files/mig-parted-config.yaml' in gpunode.mig_custom_strategy_config_file"
               register: custom_strategy_config_file_exist
+
+            - name: '{{ ansible_name_module }} | assert | gpunode.mig_custom_strategy_config_file is defined and a valid file'
+              ansible.builtin.assert:
+                that:
+                  - custom_strategy_config_file_exist is defined
+                  - custom_strategy_config_file_exist.stat is defined
+                  - custom_strategy_config_file_exist.stat.isreg is defined
+                  - custom_strategy_config_file_exist.stat.isreg | bool
+                msg: "The custom GPU slicing profile configmap file is required before this can be configured "
 
             - name: '{{ ansible_name_module }} | config custom strategy | check CM exist'
               ansible.builtin.shell: >
@@ -300,22 +313,27 @@
               ignore_errors: true
               register: custom_strategy_cm_exist
 
-            - name: '{{ ansible_name_module }} | create custom stragety CM'
-              ansible.builtin.command: >
-                {{ openshift_cli }} create configmap {{ gpunode.mig_custom_strategy_cm }} --from-file={{ gpunode.mig_custom_strategy_config_file }} -n nvidia-gpu-operator
+            - name: '{{ ansible_name_module }} | config custom strategy | delete exsting CM '
+              ansible.builtin.shell: >
+                {{ openshift_cli }} delete cm {{ gpunode.mig_custom_strategy_cm }} -n nvidia-gpu-operator
               when:
-                - custom_strategy_config_file_exist is defined
-                - custom_strategy_config_file_exist.stat is defined
-                - custom_strategy_config_file_exist.stat.isreg is defined
-                - custom_strategy_config_file_exist.stat.isreg | bool
                 - custom_strategy_cm_exist is defined
                 - custom_strategy_cm_exist.rc is defined
                 - custom_strategy_cm_exist.rc > 0
+              register: custom_strategy_cm_exist
+
+            - name: '{{ ansible_name_module }} | create custom stragety CM'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create configmap {{ gpunode.mig_custom_strategy_cm }} --from-file=config.yaml={{ gpunode.mig_custom_strategy_config_file }} -n nvidia-gpu-operator
               register: custom_strategy_cm_created
 
             - name: '{{ ansible_name_module }} | Apply Custom MIG Strategy to cluster policy'
               ansible.builtin.command: >
                 {{ openshift_cli }} patch clusterpolicy/gpu-cluster-policy --type='json' -p='[{"op": "replace", "path": "/spec/migManager/config/name", "value": "{{ gpunode.mig_custom_strategy_cm }}" }]'
+              when:
+                - custom_strategy_cm_created is defined
+                - custom_strategy_cm_created.rc is defined
+                - custom_strategy_cm_created.rc == 0 
               register: mig_strategy_configured
 
         - name: '{{ ansible_name_module }} | Configure MIG Strategy'
