@@ -1,0 +1,44 @@
+---
+kyverno_charts_repo: ''
+kyverno_ns: 'kyverno'
+apply_node_selector: 'true'
+apply_infra_tolerations: 'true'
+infra_id: 'infra'
+infra_label: 'infra'
+infra_taint_value: 'reserved'
+kyverno_image_repository: 'kyverno'
+kyvernocli_image_tag: 'latesto'
+disable_chart_scc: 'true'
+apply_ns_exclusion_config: 'true'
+kyverno_excluded_ns:
+  - "ansible-automation-platform"
+  - "hive"
+  - "kube-*"
+  - "local-quay"
+  - "multicluster-engine"
+  - "open-cluster-management"
+  - "open-cluster-management-*"
+  - "openshift-*"
+  - "rhacs-operator"
+  - "stackrox"
+kyverno_config_test_image_repository: 'nirmata'
+kyverno_config_test_image: 'busybox'
+kyverno_config_test_image_tag: 'latest'
+kyverno_webhook_cleanup_image_repository: 'bitnami'
+kyverno_webhook_cleanup_image: 'kubectl'
+kyverno_webhook_cleanup_image_tag: 'latest'
+kyverno_admission_controller_replicas: '3'
+kyverno_image_repository: 'kyverno'
+kyverno_pre_image: 'kyvernopre'
+kyverno_pre_image_tag: 'latest'
+kyverno_image: 'kyverno'
+kyverno_image_tag: 'latest'
+kyverno_background_controller_image: 'background-controller'
+kyverno_background_controller_image_tag: 'latest'
+kyverno_background_controller_replicas: '2'
+kyverno_cleanup_controller_replicas: '2'
+kyverno_cleanup_controller_image: 'cleanup-controller'
+kyverno_cleanup_controller_image_tag: 'latest'
+kyverno_reports_controller_image: 'reports-controller'
+kyverno_reports_controller_image_tag: 'latest'
+kyverno_reports_controller_replicas: '2'

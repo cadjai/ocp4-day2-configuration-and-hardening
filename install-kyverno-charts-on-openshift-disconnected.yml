@@ -1,0 +1,172 @@
+- name: ' Install Kyverno Helm Chart in disconnected environments | install-kyverno-charts-on-openshift-disconnected.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Install Kyverno Helm Chart in disconnected environments"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+    configure_fileintegrity: 'true'
+  vars_files:
+    - 'vars/kyverno.yml'
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+
+  pre_tasks:
+    - name: Install required pip library
+      ansible.builtin.pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      community.general.python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | command:which | Check if helm binary exist'
+      ansible.builtin.shell: >
+        which helm
+      ignore_errors: yes
+      register: helm_binary
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug }} | Print helm_binary output'
+      ansible.builtin.debug:
+        var: helm_binary
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | assert | helm repo variable'
+      ansible.builtin.assert:
+        that:
+          - kyverno_charts_repo is defined
+          - kyverno_charts_repo != ''
+        msg: "The kyverno chart repo in theform of repo name or chart archive file path is required before running this"
+
+    - name: '{{ ansible_name_module }} | assert | helm binary is installed'
+      ansible.builtin.assert:
+        that:
+          - helm_binary is defined
+          - helm_binary.rc is defined
+          - helm_binary.rc == 0
+          - helm_binary.stdout is defined
+          - helm_binary.stdout != ''
+        msg: "The helm binary needs to be installed on the controller"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Deploy Kyverno DB if needed'
+      block:
+        - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ helm_binary.stdout }} | deploy Kyverno'
+          ansible.builtin.shell: >
+            {{ helm_binary.stdout }} install kyverno {{ kyverno_charts_repo }} -n {{ kyverno_ns | default('kyverno', true) }} \
+              --create-namespace=true \
+              --set admissionController.replicas={{ kyverno_admission_controller_replicas }} \
+              --set admissionController.initContainer.image.registry={{ registry_host_fqdn }} \
+              --set admissionController.initContainer.image.repository={{ local_repository }}/{{ kyverno_image_repository }}/{{ kyverno_pre_image }} \
+              --set admissionController.initContainer.image.tag={{ kyverno_pre_image_tag }} \
+              --set admissionController.initContainer.securityContext=null \
+              --set admissionController.container.image.registry={{ registry_host_fqdn }} \
+              --set admissionController.container.image.repository={{ local_repository }}/{{ kyverno_image_repository }}/{{ kyverno_image }} \
+              --set admissionController.container.image.tag={{ kyverno_image_tag }} \
+              --set admissionController.container.securityContext=null \
+              --set-json admissionController.nodeSelector='{"node-role.kubernetes.io/{{ infra_id }}": ""}' \
+              --set-json admissionController.tolerations='[{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoSchedule"},{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoExecute"}]' \
+              --set reportsController.replicas={{ kyverno_reports_controller_replicas }} \
+              --set reportsController.image.registry={{ registry_host_fqdn }} \
+              --set reportsController.image.repository={{ local_repository }}/{{ kyverno_image_repository }}/{{ kyverno_reports_controller_image }} \
+              --set reportsController.image.tag={{ kyverno_reports_controller_image_tag }} \
+              --set-json reportsController.nodeSelector='{"node-role.kubernetes.io/{{ infra_id }}": ""}' \
+              --set-json reportsController.tolerations='[{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoSchedule"},{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoExecute"}]' \
+              --set reportsController.securityContext=null \
+              --set-json reportsController.resources.limits='{"cpu": "100m", "memory": "128Mi"}' \
+              --set-json reportsController.resources.request='{"cpu": "100m", "memory": "64Mi"}' \
+              --set cleanupController.replicas={{ kyverno_cleanup_controller_replicas }} \
+              --set cleanupController.image.registry={{ registry_host_fqdn }} \
+              --set cleanupController.image.repository={{ local_repository }}/{{ kyverno_image_repository }}/{{ kyverno_cleanup_controller_image }} \
+              --set cleanupController.image.tag={{ kyverno_cleanup_controller_image_tag }} \
+              --set-json cleanupController.nodeSelector='{"node-role.kubernetes.io/{{ infra_id }}": ""}' \
+              --set-json cleanupController.tolerations='[{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoSchedule"},{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoExecute"}]' \
+              --set-json cleanupController.rbac.clusterRole.extraResources='[{"verbs": ["get","list"], "apiGroups": ["apps"], "resources": ["deployments"]}]' \
+              --set cleanupController.securityContext=null \
+              --set backgroundController.replicas={{ kyverno_background_controller_replicas }} \
+              --set backgroundController.image.registry={{ registry_host_fqdn }} \
+              --set backgroundController.image.repository={{ local_repository }}/{{ kyverno_image_repository }}/{{ kyverno_background_controller_image }} \
+              --set backgroundController.image.tag={{ kyverno_background_controller_image_tag }} \
+              --set-json backgroundController.nodeSelector='{"node-role.kubernetes.io/{{ infra_id }}": ""}' \
+              --set-json backgroundController.tolerations='[{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoSchedule"},{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoExecute"}]' \
+              --set backgroundController.securityContext=null \
+              --set webhooksCleanup.image.registry={{ registry_host_fqdn }} \
+              --set webhooksCleanup.image.repository={{ local_repository }}/{{ kyverno_webhook_cleanup_image_repository }}/{{ kyverno_webhook_cleanup_image }} \
+              --set webhooksCleanup.image.tag={{ kyverno_webhook_cleanup_image_tag }} \
+              --set-json webhooksCleanup.nodeSelector='{"node-role.kubernetes.io/{{ infra_id }}": ""}' \
+              --set-json webhooksCleanup.tolerations='[{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoSchedule"},{"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoExecute"}]' \
+              --set test.image.registry={{ registry_host_fqdn }} \
+              --set test.image.repository={{ local_repository }}/{{ kyverno_config_test_image_repository }}/{{ kyverno_config_test_image }} \
+              --set test.image.tag={{ kyverno_config_test_image_tag }} \
+              --set test.securityContext=null \
+              --set-json config.resourceFiltersExcludeNamespaces='[{{ kyverno_excluded_ns | map("to_json") | join(", ") }}]' \
+              --set config.create=true \
+              --set config.defaultRegistry="{{ registry_host_fqdn }}"
+          register: kyverno_charts_applied
+
+         ### These are being added to fix some of the issues with current version of th kyverno chart when deploying to openshift
+         #### They  can be removed once the issues have been fixed
+        - name: '{{ ansible_name_module }} | Deploy Kyverno DB if needed'
+          when:
+            - not kyverno_charts_bug_fixed is defined or not kyverno_charts_bug_fixed | bool
+          block:
+            - name: '{{ ansible_name_module }} | {{ openshift_cli }} create | create a rolebinding for deployment list role'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create clusterrolebinding 'kyverno:cleanup-controller:addtl' \
+                 --clusterrole='kyverno:cleanup-controller:additional' --serviceaccount=kyverno:kyverno-cleanup-controller
+              failed_when:
+                - deployment_rb_created.rc is defined
+                - deployment_rb_created.rc > 0
+                - deployment_rb_created.stderr is defined
+                -  not 'already exists' in deployment_rb_created.stderr
+              register: deployment_rb_created
+
+            - name: '{{ ansible_name_module }} | {{ openshift_cli }} create | missing service account for the kyverno-remove-configmap'
+              ansible.builtin.command: >
+                {{ openshift_cli }} create serviceaccount kyverno-remove-configmap -n kyverno
+              failed_when:
+                - missing_sa_created.rc is defined
+                - missing_sa_created.rc > 0
+                - missing_sa_created.stderr is defined
+                -  not 'already exists' in missing_sa_created.stderr
+              register: missing_sa_created
+
+            - name: '{{ ansible_name_module }} | {{ openshift_cli }} delete | failing job due to missing service account '
+              ansible.builtin.command: >
+                {{ openshift_cli }} delete job.batch/kyverno-remove-configmap job.batch/kyverno-remove-configmap -n kyverno
+              failed_when:
+                - extra_failing_jobs_removed.rc is defined
+                - extra_failing_jobs_removed.rc > 0
+                - extra_failing_jobs_removed.stderr is defined
+                -  not ' not found' in extra_failing_jobs_removed.stderr
+              register: extra_failing_jobs_removed
+
+            - name: '{{ ansible_name_module }} | {{ openshift_cli }} get | retrieve orignial args '
+              ansible.builtin.shell: >
+                {{ openshift_cli }} get deployment kyverno-reports-controller -n kyverno -o jsonpath='{.spec.template.spec.containers[0].args}{"\n"}' | jq .[]
+              register: orig_args_out
+
+            - name: '{{ ansible_name_module }} | set_fact | set updated args facts'
+              ansible.builtin.set_fact:
+                updated_args: "{{ updated_args | default([], true) + [(item | replace('\"',''))] }}"
+              loop: "{{ orig_args_out.stdout_lines }}"
+              when:
+                - orig_args_out.stdout_lines is defined
+                - orig_args_out.stdout_lines | length > 0
+                - not '--reportsChunkSize=0' in item
+
+            - name: '{{ ansible_name_module }} | {{ openshift_cli }} patch | replace original args with updated without  reportChunkSize argument from report controller deployment '
+              ansible.builtin.command: >
+                {{ openshift_cli }} patch deployment kyverno-reports-controller -n kyverno --type=json \
+                  -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/args", "value": {{ updated_args }}}]'
+              register: extra_arg_removed
