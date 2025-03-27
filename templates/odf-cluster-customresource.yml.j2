@@ -1,0 +1,64 @@
+apiVersion: ocs.openshift.io/v1
+kind: StorageCluster
+metadata:
+  annotations:
+    uninstall.ocs.openshift.io/cleanup-policy: delete
+    uninstall.ocs.openshift.io/mode: graceful
+  finalizers:
+  - storagecluster.ocs.openshift.io
+  name: ocs-storagecluster
+  namespace: openshift-storage
+spec:
+  arbiter: {}
+  encryption:
+    kms: {}
+  externalStorage: {}
+{% if enable_flexible_scalling is defined and enable_flexible_scalling | bool %}
+  flexibleScaling: true
+{% endif %}
+  managedResources:
+    cephBlockPools: {}
+    cephCluster: {}
+    cephConfig: {}
+    cephDashboard: {}
+    cephFilesystems: {}
+    cephNonResilientPools: {}
+    cephObjectStoreUsers: {}
+    cephObjectStores: {}
+    cephToolbox: {}
+  mirroring: {}
+{% if enable_mcg is defined and enable_mcg | bool %}
+  multiCloudgateway:
+    dbStorageClassName: {{ odf_default_provider_rwo_sc | d('default-rwo', true) }}
+    reconciliationStrategy: standalone
+{% endif %}
+{% if enable_nfs is defined and enable_nfs | bool %}
+  nfs:
+    enable: true
+    storageClassName: {{ odf_nfs_storage_class | d('default-nfs', true) }}
+{% endif %}
+  nodeTopologies: {}
+  storageDeviceSets:
+  - config: {}
+    count: 1 
+    dataPVCTemplate:
+      metadata: {}
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ odf_device_block_size | d('4Ti', true) }}
+        storageClassName: {{ odf_storage_class | d('odf-managed-block', true) }}
+        volumeMode: {{ odf_device_volume_mode | d('Block', true) }}
+      status: {}
+    name: ocs-deviceset-gp3-csi
+    placement: {}
+    portable: true
+    preparePlacement: {}
+{% if enable_remote_consumers is defined and enable_remote_consumers | bool %}
+    providerAPIServerServiceType: NodePort
+    allowRemoteStorageConsumers: true
+{% endif %}
+    replica: {{ odf_node_count | d('3', true) }}
+    resources: {}

@@ -22,7 +22,7 @@ specialworkernode:
   requester: ''    ### The tenant who requested this. If requested by the platform team then will default to 
   taint_key: 'devspaces'    ### the key used for the node taint 
   taint_value: 'reserved'  ### The value use for the taint applied to the node (e.g. reserved)
-  env: 'aide-ide'
+  env: 'dev'
 
 #################################
 # End Special Worker Node Variables

@@ -1,0 +1,38 @@
+---
+- name: '{{ ansible_name_module }} | Apply ODF Clustet CR if appropriate'
+  when:
+    - apply_odf_cluster is defined
+    - apply_odf_cluster | bool 
+    - (odf_cluster_cr_template is defined and odf_cluster_cr_template != '') or (odf_cluster_cr is defined and odf_cluster_cr != '') 
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | set odf node label'
+      ansible.builtin.set_fact:
+        odf_cluster_cr: "{{ staging_dir | d('/tmp', true) }}/odf-cluster-cr.yml"
+      when:
+        - not odf_cluster_cr is defined or odf_cluster_cr == ''
+
+    - name: Print template location output
+      ansible.builtin.debug:
+        var: odf_cluster_cr_template
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | template | Copy Operator CR to staging location'
+      ansible.builtin.template:
+        src: "{{ odf_cluster_cr_template }}"
+        dest: "{{ odf_cluster_cr }}"
+        force: yes
+      vars:
+        operator_catalog_name: "{{ odf_operator.catalog_name }}"
+        operator_target_namespace: "{{ odf_operator.target_namespace }}"
+      when:
+        - odf_cluster_cr_template is defined
+        - odf_cluster_cr_template != ''
+      register: op_cr_rendered
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | ODF Cluster CR'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ odf_cluster_cr }}
+      register: op_cr_deployed
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF Cluster plugin config tasks'
+      ansible.builtin.import_tasks: tasks/enable-odf-console-plugin.yml

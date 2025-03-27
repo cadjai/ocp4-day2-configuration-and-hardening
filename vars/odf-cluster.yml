@@ -1,0 +1,21 @@
+---
+odf_operator:
+  name: 'odf-operator'
+  group_name: 'odf-operator-group'
+  catalog_name: 'custom-odf-operator'
+  sub_channel: 'stable-4.14'
+  deploy_namespace: 'openshift-storage'
+  target_namespace: 'openshift-storage'  ### values are all, empty or list of ns names
+  deploy_namespace_description: 'openshift-storage'
+  patch_namespace: 'true'
+  patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+  patch_namespace_annotations: '{"openshift.io/node-selector": ""}'
+  create_namespace: 'true'
+  create_catalog: 'false'
+  create_catalog_group: 'true'
+  index_image: 'odf-operator-index'
+  device_block_size: '4Ti'
+  device_volume_mode: 'Block'
+  storage_class: 'gp3-csi'
+  node_count: '3'
+

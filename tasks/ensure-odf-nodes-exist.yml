@@ -1,0 +1,52 @@
+---
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve ODF nodes'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get nodes -o  jsonpath='{.items[?(@.metadata.labels.cluster\.ocs\.openshift\.io/openshift-storage=="")].metadata.name}{"\n"}' 
+  register: odf_nodes_exist
+
+- name: "{{ ansible_name_module }} | Print odf nodes retrieval raw output"
+  ansible.builtin.debug:
+    var: odf_nodes_exist
+    verbosity: 2
+  when:
+    - odf_nodes_exist is defined 
+    - odf_nodes_exist.rc is defined 
+    - odf_nodes_exist.rc == 0 
+    - odf_nodes_exist.stdout is defined 
+    - odf_nodes_exist.stdout != '' 
+
+- name: '{{ ansible_name_module }} | set_fact | set odf nodes names '
+  ansible.builtin.set_fact:
+    odf_nodes: "{{ odf_nodes | default([], true) + [item] }}"
+  loop: "{{ odf_nodes_exist.stdout.split(' ') }}"
+  when:
+    - odf_nodes_exist is defined 
+    - odf_nodes_exist.rc is defined 
+    - odf_nodes_exist.rc == 0 
+    - odf_nodes_exist.stdout is defined 
+    - odf_nodes_exist.stdout != '' 
+    - item is defined
+    - item != ''
+
+- name: "{{ ansible_name_module }} | Print ODF node names"
+  ansible.builtin.debug:
+    var: odf_nodes
+    verbosity: 2
+  when:
+    - odf_nodes is defined
+    - odf_nodes | length > 0 
+
+- name: '{{ ansible_name_module }} | set_fact | Set ODF node count '
+  ansible.builtin.set_fact:
+    odf_nodes_count: "{{ odf_nodes | length }}"
+  when:
+    - odf_nodes is defined
+    - odf_nodes | length > 0 
+
+- name: "{{ ansible_name_module }} | Print ODF node count"
+  ansible.builtin.debug:
+    var: odf_nodes_count
+    verbosity: 2
+  when:
+    - odf_nodes_count is defined
+    - odf_nodes_count | int > 0

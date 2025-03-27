@@ -1,0 +1,128 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get ODF cat src cr'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get catalogsource -A --no-headers | grep -i odf-operator | awk '{print $2}'
+  ignore_errors: true
+  register: odf_catsrc_exists
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure the odf cat source exists'
+  ansible.builtin.assert:
+    that:
+      - odf_catsrc_exists is defined
+      - odf_catsrc_exists.rc is defined
+      - odf_catsrc_exists.rc == 0
+      - odf_catsrc_exists.stdout is defined
+      - odf_catsrc_exists.stdout != ''
+      - "'odf' in odf_catsrc_exists.stdout"
+    msg: " the ODF Operator Catalog Source must exist in the cluster"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get ODF namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get project {{ odf_ns }} --no-headers | awk '{print $1}'
+  ignore_errors: true
+  register: odf_ns_exists
+
+- name: '{{ ansible_name_module }} | Install odf_operator.Operator'
+  when:
+    - odf_ns_exists is defined
+    - odf_ns_exists.stdout is defined
+    - odf_ns_exists.stdout != ''
+    - "odf_ns in odf_ns_exists.stdout"
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get ODF subscription cr'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get sub -A --no-headers | grep odf-operator | awk '{print $2}'
+      ignore_errors: true
+      register: odf_sub_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get ODF OG cr namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get og -A --no-headers | grep odf-operator | awk '{print $2}'
+      ignore_errors: true
+      register: odf_og_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete ODF OG if no sub exist in namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} delete og {{ odf_og_exists.stdout }} -n {{ odf_operator.deploy_namespace }} 
+      ignore_errors: true
+      when:
+        - odf_sub_exists.stdout is defined 
+        - odf_sub_exists.stdout == ''
+        - odf_og_exists.rc is defined
+        - odf_og_exists.rc == 0 
+        - odf_og_exists.stdout is defined
+        - odf_og_exists.stdout != '' 
+      register: odf_og_deleted
+
+- name: '{{ ansible_name_module }} | Install odf_operator.Operator'
+  when:
+    - (odf_ns_exists.rc >= 0 and odf_ns_exists.stderr is defined and odf_ns_exists.stderr != '' and 'not found' in odf_ns_exists.stderr) or (odf_sub_exists.stdout is defined and odf_sub_exists.stdout == '' and odf_og_exists.stdout is defined and odf_og_exists.stdout == '')
+  block:
+    - name: '{{ ansible_name_module }} | Deploy Operators | Create Operator Namespace'
+      ansible.builtin.command: >
+        {{ openshift_cli }} create namespace '{{ odf_operator.deploy_namespace }}'
+      failed_when: "operator_ns_created.rc >=1 and not ' already exists' in operator_ns_created.stderr"
+      register: operator_ns_created
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add labels'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch namespace {{ odf_operator.deploy_namespace }} --type merge -p '{"metadata":{"labels": {{ odf_operator.patch_namespace_labels }} }}'
+      when:
+        - odf_operator.patch_namespace_labels is defined
+        - odf_operator.patch_namespace_labels != '' 
+      register: operator_ns_patched
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add annotations'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch namespace {{ odf_operator.deploy_namespace }} --type merge -p '{"metadata":{"annotations": {{ odf_operator.patch_namespace_annotations }} }}'
+      when:
+        - odf_operator.patch_namespace_annotations is defined
+        - odf_operator.patch_namespace_annotations != '' 
+      register: operator_ns_ann_patched
+
+    - name: '{{ ansible_name_module }} | template | Copy OperatorGroup Config to staging location'
+      ansible.builtin.template:
+        src: "../templates/OperatorGroup.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_operator.name }}-OperatorGroup.yml"
+        force: yes
+      vars:
+        operator_group_name: "{{ odf_operator.group_name }}"
+        operator_deploy_namespace: "{{ odf_operator.deploy_namespace }}"
+        operator_target_namespace: "{{ odf_operator.target_namespace }}"
+        operator_name: "{{ odf_operator.name }}"
+      register: op_csc_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operatorgroup '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ odf_operator.name }}-OperatorGroup.yml
+      register: op_csc_deployed
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | Get package manifest for each operator'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get packagemanifest {{ odf_operator.name }} -ojsonpath='{.status.channels[-1].currentCSV}{"\n"}{.status.defaultChannel}{"\n"}'
+      register: operator_pkg_info
+
+    - name: '{{ ansible_name_module }} | template | Copy Operator Subscripion to staging location'
+      ansible.builtin.template:
+        src: "../templates/Subscription.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_operator.name }}-Subscription.yml"
+        force: yes
+      vars:
+        operator_catalog_name: "{{ odf_operator.catalog_name }}"
+        operator_target_namespace: "{{ odf_operator.target_namespace }}"
+        operator_deploy_namespace: "{{ odf_operator.deploy_namespace }}"
+        operator_name: "{{ odf_operator.name }}"
+        operator_sub_channel: "{{ operator_pkg_info.stdout_lines[1] }}"
+        operator_csv_version: "{{ operator_pkg_info.stdout_lines[0] }}"
+      register: op_sub_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator subscription'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ odf_operator.name }}-Subscription.yml
+      register: op_sub_deployed
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for Operator resources to be created'
+      ansible.builtin.wait_for:
+        timeout: 20
+      delegate_to: localhost
+

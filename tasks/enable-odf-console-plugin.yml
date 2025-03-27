@@ -1,0 +1,27 @@
+---
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get odf console plugin '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get ConsolePlugin odf-console 
+  register: odf_console_plugin_retrieved
+  ignore_errors: true
+  until:
+    - odf_console_plugin_retrieved.stdout is defined
+    - odf_console_plugin_retrieved.stdout != ''
+    - odf_console_plugin_retrieved.rc is defined
+    - odf_console_plugin_retrieved.rc == 0 
+    - " 'odf-console' in odf_console_plugin_retrieved.stdout "
+  retries: 5
+  delay: 10
+  changed_when: false
+
+- name: '{{ ansible_name_module }} | Enable console plugin'
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch console.operator.openshift.io cluster --type=merge -p '{"spec": {"plugins": ["odf-console"]}}'
+  when:
+    - odf_console_plugin_retrieved.stdout is defined
+    - odf_console_plugin_retrieved.stdout != ''
+    - odf_console_plugin_retrieved.rc is defined
+    - odf_console_plugin_retrieved.rc == 0
+    - " 'odf-console' in odf_console_plugin_retrieved.stdout "
+  register: odf_console_plugin_enabled 
+

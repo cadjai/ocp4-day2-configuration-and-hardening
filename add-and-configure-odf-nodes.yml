@@ -1,0 +1,162 @@
+- name: ' Konductor | Provision UPI Infra | post-deploy-configure-special-worker-nodes.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/odf-infra-node.yml'
+  vars:
+    module: "Provision ODF Infra Nodes"
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+
+  pre_tasks:
+    - name: Ensure Proper Python dependency is installed for Openshift
+      community.general.python_requirements_info:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - ansible.builtin.assert:
+            that:
+              - odfnode is defined and odfnode != ""
+            msg: " the odfnode structure must be set and valid "
+        - ansible.builtin.assert:
+            that:
+              - odfnode.role is defined and odfnode.role != ""
+            msg: " the odfnode.role must be set and valid "
+        - ansible.builtin.assert:
+            that:
+              - (odfnode.instance_az is defined and odfnode.instance_az != "") or ( aws_zones is defined and aws_zones | length > 0) 
+            msg: " the odfnode.instance_az must be set and valid or  the aws_zones structure must be set and valid"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+           infrastructure cluster
+      register: cluster_odf_id
+
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure Region'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get -o jsonpath='{.status.platformStatus.aws.region}{"\n"}' \
+           infrastructure cluster
+      register: cluster_aws_region
+
+    - name: '{{ ansible_name_module }} | set_fact | set odf node label'
+      ansible.builtin.set_fact:
+        odf_label: "{{ odfnode.role }}"
+
+    - name:  '{{ ansible_name_module }} | Set unique availability zones facts | set_fact'
+      ansible.builtin.set_fact:
+        unique_aws_zones: "{{ aws_zones | unique }}"
+
+    - name:  '{{ ansible_name_module }} | Set missing nodes count facts | set_fact'
+      ansible.builtin.set_fact:
+        missing_node_machine_count: "{{ ((aws_zones | length | int)  - (unique_aws_zones | length | int)) }}"
+        odf_replica_count_per_az: "{{ ((odfnode.instance_count | int) / (aws_zones | length | int)) | int }}"
+        total_odf_az_one: "{{ (((odfnode.instance_count | int) / (aws_zones | length | int)) + ((aws_zones | length | int)  - (unique_aws_zones | length | int))) | int }}"
+
+    - name: '{{ ansible_name_module }} | Retrieve worker Instance Profile name'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machine $({{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep infra | head -n+1 | awk '{print $1}') -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.iamInstanceProfile.id}{"\n"}'
+      register: cluster_aws_worker_profile
+
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure VPC'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machine $({{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | head -n+1 | awk '{print $1}') -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.subnet.filters[0].values[0]}{"\n"}'
+      register: cluster_aws_vpc_subnet
+
+    - name: '{{ ansible_name_module }} | Set special node region subnet'
+      ansible.builtin.set_fact:
+        aws_region: "{{ odfnode.instance_az if  odfnode.instance_az is defined and  odfnode.instance_az != '' else cluster_aws_region.stdout }}"
+        aws_node_profile: "{{ odfnode.profile if odfnode.profile is defined and odfnode.profile != '' else cluster_aws_worker_profile.stdout }}"
+
+    - name: '{{ ansible_name_module }} | template | Copy odfnode.machineset template to staging location'
+      ansible.builtin.template:
+        src: "templates/odf-infranode-machineset.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/odf-az{{ key_cnt }}-infranode-machineset.yml"
+        force: yes
+      vars:
+        infra_id: "{{ cluster_odf_id.stdout }}"
+        aws_az: "{{ aws_zones[key_cnt] }}"
+        aws_node_subnet: "{{ cluster_aws_vpc_subnet.stdout[:-1] }}{{ aws_zones[key_cnt] }}"
+        node_sg: "{{ odfnode.sg | d('worker', true) }}"
+        node_profile: "{{ aws_node_profile }}"
+        node_role: "{{ odfnode.role | d('worker', true) }}"
+        node_type: "{{ odfnode.type | d('worker', true) }}"
+        node_replica_count: "{{ odfnode.node_count | default('1', true) }}"
+        node_ami: "{{ odfnode.ami | d('ami-0dd351da1e7c9fdc1',true) }}"
+        node_block_size: "{{ odfnode.block_size | d('120', true) }}"
+        node_volume_type: "{{ odfnode.volume_type | d('gp3', true) }}"
+        node_instance_type: "{{ odfnode.instance_type | d('g4dn.xlarge', true) }}"
+        node_gpu_count: "{{ odfnode.gpu_count | d('0', true) }}"
+        node_memory_size: "{{ odfnode.mem_size | d('0', true) }}"
+        node_cpu_count: "{{ odfnode.cpu_count | d('0', true) }}"
+        node_owner: "{{ odfnode.requester }}"
+        node_env: "{{ odfnode.env | d('dev', true) }}"
+        node_taint_value: "{{ odfnode.taint_value | d('true', true) }}"
+        node_taint_key: "{{ odfnode.taint_key | d('node.ocs.openshift/storage', true) }}"
+        odf_device_block_size: "{{ odfnode.device_block_size | d('4096', true) }}"
+        odf_device_volume_type: "{{ odfnode.device_volume_type | d('gp3', true) }}"
+      loop: "{{ unique_aws_zones }}"
+      loop_control:
+        index_var: key_cnt
+      register: odfnode_machineset_config_copied
+
+     #### Process cases where we need more than a single node in one availability zone  ###
+    - name: '{{ ansible_name_module }} | duplicate availability zone adjustment'
+      when:
+        - missing_node_machine_count is defined
+        - missing_node_machine_count | int > 0
+      block:
+        - name: '{{ ansible_name_module }} | find | list of odf node machinesets'
+          ansible.builtin.find:
+            path: "{{ staging_dir | d('/tmp', true) }}/"
+            patterns: '*-odfnode-machineset.yml'
+          register: odf_machineset_file_list
+
+        - name: '{{ ansible_name_module }} | set_fact | created odf machinesets'
+          ansible.builtin.set_fact:
+            odf_machineset_files_paths: "{{ odf_machineset_file_list.files  | map(attribute='path') | list }}"
+
+        - name: '{{ ansible_name_module }} | replace | update replica count for first created odf machineset'
+          ansible.builtin.replace:
+            regexp: ' replicas: {{ odf_replica_count_per_az }}'
+            replace: ' replicas: {{ total_odf_az_one | int }}'
+            path: "{{ staging_dir | d('/tmp', true) }}/odf-az0-infranode-machineset.yml"
+
+    #### End Processing cases where we need more than a single node in one availability zone  ###
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy odf machinesets '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/odf-az{{ key_cnt }}-infranode-machineset.yml
+      loop: "{{ unique_aws_zones }}"
+      loop_control:
+        index_var: key_cnt
+      register: odfnode_machineset_created
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for machine to be created'
+      ansible.builtin.wait_for:
+        timeout: 210
+      delegate_to: localhost
+      

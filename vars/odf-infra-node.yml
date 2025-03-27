@@ -1,0 +1,36 @@
+---
+#################################
+# ODF Infra Node  Variables
+##################################
+
+odfnode:
+  role: 'infra'    ### purpose of the node (e.g. devspace, gpu...) used as the label for the node 
+  type: 'infra'    ### type of node (e.g. gpu, devspace, build) used as the node type in the machineset template
+  sg: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+  profile: 'worker'     ### using the worker sg but we could have added an infra sg and use it
+  replica_count: 1
+  instance_count: 3
+  block_size: 120
+  volume_type: gp3
+  instance_type: 'r6i.4xlarge'
+  instance_az: ''
+  instance_region: ''
+  ami: '{{ aws_rhcos_ami }}'
+  gpu_count: 
+  cpu_count: 
+  mem_size: 
+  node_count: 1
+  requester: ''    ### The tenant who requested this. 
+  taint_key: 'node.ocs.openshift.io/storage'    ### the key used for the node taint 
+  taint_value: 'true'  ### The value use for the taint applied to the node (e.g. reserved)
+  env: 'aide-ide'
+  device_block_size: '4096'
+  device_volume_type: 'gp3'
+  device_volume_mode: 'Block'
+  storage_class: 'odf-managed-block'
+
+
+#################################
+# End ODF Infra Node Variables
+##################################
+

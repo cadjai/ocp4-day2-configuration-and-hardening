@@ -1,0 +1,59 @@
+- name: ' Konductor | Provision UPI Infra | configure-odf-cluster.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/odf-cluster.yml'
+
+  vars:
+    module: "Configure ODF Cluster"
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+  pre_tasks:
+    - name: Ensure Proper Python dependency is installed for Openshift
+      community.general.python_requirements_info:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF operator install check tasks'
+      ansible.builtin.import_tasks: tasks/ensure-odf-operator-is-installed.yml 
+      vars:
+        odf_ns: "{{ odf_operator.deploy_namespace }}"
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF validation check tasks'
+      ansible.builtin.import_tasks: tasks/ensure-odf-nodes-exist.yml 
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF Cluster config tasks'
+      ansible.builtin.import_tasks: tasks/configure-odf-cluster.yml
+      vars:
+        apply_odf_cluster: 'true' 
+        odf_cluster_cr_template: '../templates/odf-cluster-customresource.yml.j2' 
+        odf_device_block_size: "{{ odf_operator.device_block_size }}"
+        odf_storage_class: "{{ odf_operator.storage_class }}"
+        odf_device_volume_mode: "{{ odf_operator.device_volume_mode }}"
+        odf_node_count: "{{ odf_nodes_count }}"
+        apply_missing_sc: 'true'
+      when:
+        - odf_nodes_count is defined
+        - odf_nodes_count | int >= 3
+
