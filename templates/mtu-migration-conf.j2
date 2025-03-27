@@ -1,0 +1,4 @@
+[connection-{{ node_interface }}-mtu]
+match-device=interface-name:{{ node_interface }}
+ethernet.mtu={{ node_interface_mtu }}
+

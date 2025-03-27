@@ -1,0 +1,228 @@
+- name: ' Konductor | Provision UPI Infra | post-deploy-migrate-mtu.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Migrate MTU "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: Ensure Proper Python dependency is installed for Openshift
+      community.general.python_requirements_info:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+    - name: '{{ ansible_name_module }} | assert |  node_roles is defined'
+      ansible.builtin.assert:
+        that:
+          - node_roles is defined
+          - node_roles != ''
+          - node_roles | length > 0 
+        msg: "The node_roles (nodes to apply) the file to must be defined and be a valid rold on the cluster"
+      when:
+        - apply_node_interface_mtu is defined
+        - apply_node_interface_mtu | bool 
+
+    - name: '{{ ansible_name_module }} | assert | cluster_mtu_target is defined'
+      ansible.builtin.assert:
+        that:
+          - cluster_mtu_target is defined
+          - cluster_mtu_target != ''
+          - cluster_mtu_target | int > 0 
+        msg: "The cluster_mtu_target is required to do an mtu migration "
+
+    - name: '{{ ansible_name_module }} | stat | Check if mtu_conf_file exist'
+      ansible.builtin.stat:
+        path: "{{ mtu_conf_file }}"
+        get_checksum: false
+      register: mtu_conf_file_exist
+
+    - name: '{{ ansible_name_module }} | assert | mtu_conf_file is a valid file'
+      ansible.builtin.assert:
+        that:
+          - mtu_conf_file_exist is defined
+          - mtu_conf_file_exist.stat is defined
+          - mtu_conf_file_exist.stat.exists is defined
+          - mtu_conf_file_exist.stat.exists | bool 
+          - mtu_conf_file_exist.stat.path is defined
+          - mtu_conf_file_exist.stat.path != '' 
+          - " mtu_conf_file in mtu_conf_file_exist.stat.path" 
+        msg: "The mtu_conf_file must be a valid file on the controller"
+
+    - name: '{{ ansible_name_module }} | get node roles'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq | grep {{ item }}
+      loop: "{{ node_roles }}"
+      register: node_roles_check
+
+    - name: '{{ ansible_name_module }} | assert | node_roles is a valid role on he cluster'
+      ansible.builtin.assert:
+        that:
+          - node_roles_check is defined
+          - node_roles_check.results is defined
+          - node_roles_check.results | length > 0 
+          - item.rc is defined
+          - item.rc == 0 
+          - item.stdout is defined
+          - item.stdout != '' 
+          - "item.item in item.stdout " 
+      loop: "{{ node_roles_check.results }}"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | set_fact | mtu_conf_file'
+      ansible.builtin.set_fact:
+        mtu_conf_file: 'templates/mtu-migration-conf.j2'
+      when:
+        - not mtu_conf_file is defined or mtu_conf_file == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | mtu_conf_file_path'
+      ansible.builtin.set_fact:
+        mtu_conf_file_path: '/etc/NetworkManager/conf.d/99-{{ node_interface }}-mtu.conf'
+      when:
+        - not mtu_conf_file_path is defined or mtu_conf_file_path == ''
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | cluster SDN '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get network.config cluster -o jsonpath='{.spec.networkType}{"\n"}' 
+      register: cluster_sdn_out 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | cluster current MTU '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get network.config cluster -o jsonpath='{.status.clusterNetworkMTU}{"\n"}'
+      register: cluster_mtu_out 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | cluster node count'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get nodes --no-headers | wc -l 
+      register: cluster_node_count_out 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | master node '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get nodes --no-headers | grep master | head -n +1 | awk '{print $1}' 
+      register: cluster_node_out 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | node interface for OpenShift SDN'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} debug -q node/{{ cluster_node_out.stdout }} -- chroot /host ip route list match 0.0.0.0/0 | awk '{print $5}' 
+      when:
+        - cluster_sdn_out is defined 
+        - cluster_sdn_out.stdout is defined 
+        - cluster_sdn_out.stdout != ''
+        - "'OpenShiftSDN' in cluster_sdn_out.stdout" 
+      register: cluster_node_interface_out
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | node interface for Kubernetes OVN SDN'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} debug -q node/{{ cluster_node_out.stdout }} -- chroot /host nmcli -g connection.interface-name c show ovs-if-phys0 | awk '{print $5}' 
+      when:
+        - cluster_sdn_out is defined 
+        - cluster_sdn_out.stdout is defined 
+        - cluster_sdn_out.stdout != ''
+        - "not 'OpenShiftSDN' in cluster_sdn_out.stdout" 
+      register: cluster_node_interface_out
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | node interface MTU'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} debug -q node/{{ cluster_node_out.stdout }} -- chroot /host cat /sys/class/net/{{ cluster_node_interface_out.stdout }}/mtu 
+      register: cluster_node_interface_mtu_out
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch network config '
+      ansible.builtin.command: >
+      vars:
+        cluster_mtu_current: "{{ cluster_mtu_out.stdout }}"
+        machine_mtu: "{{ cluster_node_interface_mtu_out.stdout }}"
+        {{ openshift_cli }} patch Network.operator.openshift.io cluster --type=merge --patch \
+        '{"spec": {"migration": {"mtu": {"network": {"from": {{ cluster_mtu_current }}, "to": {{ cluster_mtu_target }}, "machine": {{ machine_mtu }} }}}}}'  
+      register: mtu_conf_patched
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for mcp to be complete'
+      ansible.builtin.wait_for:
+        timeout: '{{ cluster_node_count_out.stdout * 30 }}'
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | update Network Interface MTU if necessary'
+      when:
+        - apply_node_interface_mtu is defined
+        - apply_node_interface_mtu | bool 
+      block:
+        - name: '{{ ansible_name_module }} | template | Copy mtu_conf_file to staging location'
+          vars:
+            node_interface: "{{ cluster_node_interface_out.stdout }}"
+            node_interface_mtu: "{{ cluster_node_interface_mtu_out.stdout }}"
+          ansible.builtin.template: 
+            src: "{{ mtu_conf_file }}"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ (mtu_conf_file | basename).split('.j2') }} "
+            force: yes
+          register: mtu_conf_file_copied
+
+        - name: '{{ ansible_name_module }} | command:cat | Load mtu_conf_file'
+          ansible.builtin.shell: cat {{ mtu_conf_file }}
+          register: mtu_conf_file_loaded
+
+        - name: '{{ ansible_name_module }} | template | Copy file config MC to staging location'
+          vars:
+            mtu_conf_data: "{{ mtu_conf_file_loaded.stdout }}"
+            filename: "{{ (mtu_conf_file | basename).split('.')[0] }}"
+            node_role: "{{ item }}"
+          ansible.builtin.template: 
+            src: "templates/mtu-migration-mc.yml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/mtu-migration-mc-{{ node_role }}.yml"
+            force: yes
+          loop: "{{ node_roles }}"
+          when:
+            - mtu_conf_file_loaded is defined
+            - mtu_conf_file_loaded.rc is defined
+            - mtu_conf_file_loaded.rc == 0 
+            - mtu_conf_file_loaded.stdout is defined
+            - mtu_conf_file_loaded.stdout != '' 
+          register: mtu_conf_mc_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy file config '
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/mtu-migration-mc-{{ node_role }}.yml 
+          loop: "{{ node_roles }}"
+          register: mtu_conf_mc_deployed
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch network config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch Network.operator.openshift.io cluster --type=merge --patch \
+        '{"spec": {"migration": null, "defaultNetwork": {"openshiftSDNConfig": {"mtu": {{ cluster_mtu_target }}}}}}'  
+      when:
+        - cluster_sdn_out is defined 
+        - cluster_sdn_out.stdout is defined 
+        - cluster_sdn_out.stdout != ''
+        - "'OpenShiftSDN' in cluster_sdn_out.stdout " 
+      register: mtu_provider_patched
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch network config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch Network.operator.openshift.io cluster --type=merge --patch \
+        '{"spec": {"migration": null, "defaultNetwork": {"ovnKubernetesConfig": {"mtu": {{ cluster_mtu_target }}}}}}'  
+      when:
+        - cluster_sdn_out is defined 
+        - cluster_sdn_out.stdout is defined 
+        - cluster_sdn_out.stdout != ''
+        - "not 'OpenShiftSDN' in cluster_sdn_out.stdout" 
+      register: mtu_provider_patched
+
