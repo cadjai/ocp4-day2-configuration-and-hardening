@@ -1,0 +1,12 @@
+allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    description: Provides Object Bucket Claims (OBCs)
+  name: {{ odf_noobaa_pvbackingstore_obc_sc }}
+parameters:
+  bucketclass: {{ odf_noobaa_pvbackingstore_bc }}
+provisioner: openshift-storage.noobaa.io/obc
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
