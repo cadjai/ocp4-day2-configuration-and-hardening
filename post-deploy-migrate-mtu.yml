@@ -38,27 +38,24 @@
         that:
           - node_roles is defined
           - node_roles != ''
-          - node_roles | length > 0 
+          - node_roles | length > 0
         msg: "The node_roles (nodes to apply) the file to must be defined and be a valid rold on the cluster"
       when:
         - apply_node_interface_mtu is defined
-        - apply_node_interface_mtu | bool 
+        - apply_node_interface_mtu | bool
 
     - name: '{{ ansible_name_module }} | assert | cluster_mtu_target is defined'
       ansible.builtin.assert:
         that:
           - cluster_mtu_target is defined
           - cluster_mtu_target != ''
-          - cluster_mtu_target | int > 0 
+          - cluster_mtu_target | int > 0
         msg: "The cluster_mtu_target is required to do an mtu migration "
 
     - name: '{{ ansible_name_module }} | stat | Check if mtu_conf_file exist'
       ansible.builtin.stat:
         path: "{{ mtu_conf_file }}"
         get_checksum: false
-      when:
-        - mtu_conf_file is defined 
-        - mtu_conf_file != '' 
       register: mtu_conf_file_exist
 
     - name: '{{ ansible_name_module }} | assert | mtu_conf_file is a valid file'
@@ -67,14 +64,30 @@
           - mtu_conf_file_exist is defined
           - mtu_conf_file_exist.stat is defined
           - mtu_conf_file_exist.stat.exists is defined
-          - mtu_conf_file_exist.stat.exists | bool 
+          - mtu_conf_file_exist.stat.exists | bool
           - mtu_conf_file_exist.stat.path is defined
-          - mtu_conf_file_exist.stat.path != '' 
-          - " mtu_conf_file in mtu_conf_file_exist.stat.path" 
+          - mtu_conf_file_exist.stat.path != ''
+          - " mtu_conf_file in mtu_conf_file_exist.stat.path"
         msg: "The mtu_conf_file must be a valid file on the controller"
-      when:
-        - mtu_conf_file is defined 
-        - mtu_conf_file != '' 
+
+    - name: '{{ ansible_name_module }} | get node roles'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get nodes --no-headers | awk '{print $3}' | grep -v ','| sort | uniq | grep {{ item }}
+      loop: "{{ node_roles }}"
+      register: node_roles_check
+
+    - name: '{{ ansible_name_module }} | assert | node_roles is a valid role on he cluster'
+      ansible.builtin.assert:
+        that:
+          - node_roles_check is defined
+          - node_roles_check.results is defined
+          - node_roles_check.results | length > 0
+          - item.rc is defined
+          - item.rc == 0
+          - item.stdout is defined
+          - item.stdout != ''
+          - "item.item in item.stdout "
+      loop: "{{ node_roles_check.results }}"
 
   tasks:
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | cluster SDN '
@@ -248,4 +261,3 @@
         - cluster_sdn_out.stdout != ''
         - "not 'OpenShiftSDN' in cluster_sdn_out.stdout" 
       register: mtu_provider_patched
-
