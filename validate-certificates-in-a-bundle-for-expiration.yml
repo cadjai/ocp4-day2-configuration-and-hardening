@@ -52,13 +52,29 @@
           - openssl_binary.stdout != ''
         msg: "The openssl package is required before running this"
 
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
   tasks:
-    - name: '{{ ansible_name_module }} | file:directory | Ensure the staging directory exist'
-      become: yes
-      ansible.builtin.file:
-        path: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}"
-        state: directory
-        mode: 0777
+    - name: '{{ ansible_name_module }} | block | Ensure the staging directory exist'
+      block:
+      - name: "{{ ansible_name_module }} | stat | Check that staging directory exists"
+        ansible.builtin.stat:
+          path: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}"
+        register: staging_dir_exists
+
+      - name: '{{ ansible_name_module }} | file:directory | Create Staging Directory'
+        ansible.builtin.file:
+          path: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}"
+          state: directory
+          mode: 0777
+        when: staging_dir_exists.stat.isdir is not defined
+
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} Retrieve cluster CA Bundle'
       ansible.builtin.shell: >
@@ -83,7 +99,7 @@
         path: "{{ staging_dir | d('/tmp/ca-bundle-validation', true) }}"
         recurse: yes
         patterns: 'cert-*'
-      register: certs_to_validate
+      register: certs_to_validate 
 
     - name: '{{ ansible_name_module }} | set_fact | cert file paths'
       ansible.builtin.set_fact:
@@ -100,7 +116,7 @@
       ignore_errors: true
       when:
         - cert_file_paths is defined
-        - cert_file_paths | length > 0
+        - cert_file_paths | length > 0 
       register: certs_dn
 
     - name: '{{ ansible_name_module }} | debug | Print cert DN output'
@@ -116,7 +132,7 @@
       ignore_errors: true
       when:
         - cert_file_paths is defined
-        - cert_file_paths | length > 0
+        - cert_file_paths | length > 0 
       register: certs_enddate
 
     - name: '{{ ansible_name_module }} | shell | Check if cert will expire n 30 days'
@@ -126,8 +142,8 @@
       ignore_errors: true
       when:
         - cert_file_paths is defined
-        - cert_file_paths | length > 0
-      register: certs_enddate_validation
+        - cert_file_paths | length > 0 
+      register: certs_enddate_validation 
 
     - name: '{{ ansible_name_module }} | debug | Print cert validation output'
       debug:
@@ -143,7 +159,7 @@
         index_var: key_cnt
       when:
         - item.rc is defined
-        - item.rc > 0
+        - item.rc > 0 
         - item.stdout is defined
         - item.stdout != ''
         - " 'Certificate will expire' in item.stdout"
@@ -162,5 +178,5 @@
         force: yes
       when:
         - expiring_cert_list is defined
-        - expiring_cert_list | length > 0
+        - expiring_cert_list | length > 0 
 
