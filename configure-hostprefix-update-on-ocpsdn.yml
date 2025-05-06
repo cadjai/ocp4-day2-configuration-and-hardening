@@ -1,0 +1,97 @@
+- name: 'Configure hostprefix on OCP SDN | configure-hostprefix-update-on-ocpsdn.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/infra.yml'
+  vars:
+    module: "configure hostprefix"
+    ansible_name_module: "Configure cluster network hostprefix | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | assert | cluster_hostprefix_target is defined'
+      ansible.builtin.assert:
+        that:
+          - cluster_hostprefix_target is defined
+          - cluster_hostprefix_target != ''
+          - cluster_hostprefix_target | int > 0
+        msg: "The cluster_hostprefix_target is required to do a hostprefix change "
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | cluster SDN '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get network.config cluster -o jsonpath='{.spec.networkType}{"\n"}' 
+      register: cluster_sdn_out 
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | cluster current CIDR '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get network.config cluster -o jsonpath='{.spec.clusterNetwork[0].cidr}{"\n"}'
+      register: cluster_cidr_out 
+
+    - name: '{{ ansible_name_module }} | assert | cluster_hostprefix_target is defined'
+      ansible.builtin.assert:
+        that:
+          - cluster_sdn_out.stdout is defined
+          - cluster_sdn_out.stdout != ''
+          - "'OpenShiftSDN' in cluster_sdn_out.stdout "
+        msg: "The cluster network needs to be on OpenShiftSDN to do a hostprefix change "
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_cidr_target '
+      ansible.builtin.set_fact:
+        cluster_cidr_target: '{{ cluster_cidr_out.stdout }}'
+      when:
+        - not cluster_cidr_target is defined or cluster_cidr_target == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_sdn_out '
+      ansible.builtin.set_fact:
+        cluster_sdn: '{{ cluster_sdn_out.stdout }}'
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch network config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch Network.operator.openshift.io cluster --type=merge --patch \
+           '{"spec": {"migration": {"networkType": "{{ cluster_sdn }}"}, "clusterNetwork": [{"cidr": "{{ cluster_cidr_target }}", "hostPrefix": {{ cluster_hostprefix_target }} }] }}'
+      register: cluster_network_patched
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for mcp to be complete'
+      ansible.builtin.wait_for:
+        timeout: '30'
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch network config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch Network.operator.openshift.io cluster --type=merge --patch \
+        '{"spec": {"migration": null }}'
+      register: mtu_provider_patched
+
