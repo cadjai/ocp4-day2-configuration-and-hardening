@@ -18,4 +18,7 @@ roles:
   - src: https://github.com/cadjai/add-and-configure-infranodes-to-openshift4-cluster.git 
     scm: git
     name: add-and-config-infranodes 
+  - src: https://github.com/cadjai/configure-openshift-identity-provider.git 
+    scm: git
+    name: configure-openshift-identity-provider
 
