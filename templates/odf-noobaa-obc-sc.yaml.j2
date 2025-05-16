@@ -9,4 +9,5 @@ parameters:
   bucketclass: {{ odf_noobaa_pvbackingstore_bc }}
 provisioner: openshift-storage.noobaa.io/obc
 reclaimPolicy: Delete
+allowVolumeExpansion: true
 volumeBindingMode: Immediate
