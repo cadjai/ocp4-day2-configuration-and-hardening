@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ container_name }}-{{ item }}
+  namespace: {{ platform_infra_ns }} 
+spec:
+  concurrencyPolicy: Replace
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - args:
+            - -c
+            - chroot /host && rm -rf /host/home/core/assets/backup/*
+            command:
+            - /bin/sh
+            image: {{ ubi8_image_registry_repository }}/{{ ubi8_image_name }}
+            imagePullPolicy: IfNotPresent
+            name: {{ container_name }}
+            resources: {}
+            securityContext:
+              privileged: true
+              runAsUser: 0
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+            - mountPath: /host
+              name: host
+            - mountPath: /etc/pki/ca-trust
+              name: ca-trust
+          dnsPolicy: ClusterFirst
+          enableServiceLinks: true
+          hostNetwork: true
+          hostPID: true
+          nodeSelector:
+            kubernetes.io/hostname: {{ item }}
+          restartPolicy: OnFailure
+          schedulerName: default-scheduler
+          securityContext: {}
+          serviceAccount: {{ etcd_backup_service_account }}
+          serviceAccountName: {{ etcd_backup_service_account }}
+          terminationGracePeriodSeconds: 30
+          tolerations:
+          - operator: Exists
+          volumes:
+          - hostPath:
+              path: /
+              type: Directory
+            name: host
+          - hostPath:
+              path: /etc/pki/ca-trust
+              type: Directory
+            name: ca-trust
+  schedule: {{ etcd_cleanup_cron_job_schedule_expression | d('01 1 * * *', true) }}
+  successfulJobsHistoryLimit: 3
+  suspend: false

@@ -12,20 +12,77 @@
 
   pre_tasks:
     - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      when:
+        - not decrypt_values is defined or not decrypt_values | bool
       block:
-        - assert:
+        - ansible.builtin.assert:
             that:
               - add_custom_ca_ingess is defined and add_custom_ca_ingess | bool
             msg: " the add_custom_ca_ingess must be set to true "
-        - assert:
+        - ansible.builtin.assert:
             that:
               - ingress_cert_file is defined and ingress_cert_file != ""
             msg: " the ingress_cert_file must be set and valid "
-        - assert:
+        - ansible.builtin.assert:
             that:
               - ingress_cert_key_file is defined and ingress_cert_key_file != ""
             msg: " the ingress_cert_key_file must be set and valid "
-             
+
+    - name: '{{ ansible_name_module }} Process encryted Certificate files'
+      when:
+        - decrypt_values is defined
+        - decrypt_values | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | file_decryption_staging_dir '
+          ansible.builtin.set_fact:
+            file_decryption_staging_dir: "{{ staging_dir | d('/tmp', true) }}/decrypted-files"
+          when:
+            - not file_decryption_staging_dir is defined or not file_decryption_staging_dir != ''
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the staging dir exist '
+          ansible.builtin.file:
+            path: "{{ file_decryption_staging_dir }}"
+            state: directory
+            mode: 0777
+ 
+            # using the cert chain here instead of just cert. 
+            #content: "{{ ingress_crt_b64 | ansible.builtin.b64decode }}"
+        - name: '{{ ansible_name_module }} | decrypt file | custom cert file'
+          ansible.builtin.copy:
+            content: "{{ ingress_ca_b64 | ansible.builtin.b64decode }}"
+            dest: "{{ file_decryption_staging_dir }}/ingress-server.crt"
+            force: yes
+
+        - name: '{{ ansible_name_module }} | set_fact | ingress_cert_file '
+          ansible.builtin.set_fact:
+            ingress_cert_file: "{{ file_decryption_staging_dir }}/ingress-server.crt"
+
+        - name: '{{ ansible_name_module }} | decrypt file | custom cert key'
+          ansible.builtin.copy:
+            content: "{{ ingress_key_b64 | ansible.builtin.b64decode }}"
+            dest: "{{ file_decryption_staging_dir }}/ingress-server.key"
+            force: yes
+
+        - name: '{{ ansible_name_module }} | set_fact | ingress_cert_key_file '
+          ansible.builtin.set_fact:
+            ingress_cert_key_file: "{{ file_decryption_staging_dir }}/ingress-server.key"
+
+        - name: '{{ ansible_name_module }} | decrypt file | custom cert CA'
+          ansible.builtin.copy:
+            content: "{{ ingress_ca_b64 | ansible.builtin.b64decode }}"
+            dest: "{{ file_decryption_staging_dir }}/ingress-ca-bundle.crt"
+            force: yes
+
+        - name: '{{ ansible_name_module }} | set_fact | ingress_cert_key_file '
+          ansible.builtin.set_fact:
+            custom_ca_bundle_file: "{{ file_decryption_staging_dir }}/ingress-ca-bundle.crt"
+
+    - name: '{{ ansible_name_module }} | set_fact | ingress_ca_cm_name '
+      ansible.builtin.set_fact:
+        ingress_ca_cm_name: "user-ca-bundle"
+      when:
+        - not ingress_ca_cm_name is defined or ingress_ca_cm_name == ''
+
     - name: Install required pip library
       pip:
         name: openshift
@@ -104,21 +161,21 @@
       when:
         - ingress_cert_file_exist is defined
         - ingress_cert_file_exist.stat is defined
-        - ingress_cert_file_exist.isreg is defined
-        - ingress_cert_file_exist.isreg | bool
+        - ingress_cert_file_exist.stat.isreg is defined
+        - ingress_cert_file_exist.stat.isreg | bool 
         - ingress_cert_key_file_exist is defined
         - ingress_cert_key_file_exist.stat is defined
         - ingress_cert_key_file_exist.stat.isreg is defined
-        - ingress_cert_key_file_exist.stat.isreg | bool
+        - ingress_cert_key_file_exist.stat.isreg | bool 
       block:
         - name: '{{ ansible_name_module }} | Get Existing ingress custom cert secret'
-          command: >
-            {{ openshift_cli }} get secret ingress-secret -n openshift-ingress
+          ansible.builtin.command: >
+            {{ openshift_cli }} get secret ingress-secret -n openshift-ingress 
           ignore_errors: yes
           register: ingress_secret_exist
 
         - name: '{{ ansible_name_module }} | Delete Existing ingress custom cert secret'
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} delete secret ingress-secret -n openshift-ingress
           ignore_errors: yes
           when:
@@ -127,46 +184,51 @@
           register: ingress_secret_deleted
 
         - name: '{{ ansible_name_module }} | create ingress custom cert secret'
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} create secret tls ingress-secret --cert={{ ingress_cert_file }} --key={{ ingress_cert_key_file }} -n openshift-ingress
 
         - name: '{{ ansible_name_module }} | Patch Ingress Controller'
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} patch ingresscontroller.operator default --type=merge -p  '{"spec":{"defaultCertificate": {"name": "ingress-secret"}}}' -n openshift-ingress-operator
 
-        ### It is assumed that is the add_custom_ca_bundle is defined and set to true and
-        ### ingress_ca_cm_name is defined and set to non empty value and finally
-        ### custom_ca_bundle_file is defined and non emtpy and is a valid file the existing
-        ### trustedCA on the cluster proxy will be overwritten with the custom CA provided by custom_ca_bundle_file
-        - name: '{{ ansible_name_module }} | Patch Proxy Config'
+        - name: '{{ ansible_name_module }} | Create list of CM files to use'
           command: >
-            {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name | default('user-ca-bundle', true) }}"}}}'
+            {{ openshift_cli }} get cm {{ ingress_ca_cm_name }} -n openshift-config
+          register: default_c_bundle_check
+
+        - name: '{{ ansible_name_module }} | Patch Proxy Config' 
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"{{ ingress_ca_cm_name }}"}}}'
           when:
             - ingress_cert_file_exist is defined
             - ingress_cert_file_exist.stat is defined
             - ingress_cert_file_exist.stat.isreg is defined
-            - ingress_cert_file_exist.stat.isreg | bool
+            - ingress_cert_file_exist.stat.isreg | bool 
             - ingress_cert_key_file_exist is defined
             - ingress_cert_key_file_exist.stat is defined
 
-        - name: '{{ ansible_name_module }} | Configure Custom CA for auto CA injection'
+        - name: '{{ ansible_name_module }} | Enable CA injection CM' 
           when:
+            - enable_ca_injection is defined
+            - enable_ca_injection | bool 
             - ingress_cert_file_exist is defined
             - ingress_cert_file_exist.stat is defined
             - ingress_cert_file_exist.stat.isreg is defined
-            - ingress_cert_file_exist.stat.isreg | bool
+            - ingress_cert_file_exist.stat.isreg | bool 
             - ingress_cert_key_file_exist is defined
             - ingress_cert_key_file_exist.stat is defined
-            - ingress_ca_cm_name is defined
-            - ingress_ca_cm_name != ''
-            - ca_bundle_cm_created is defined
-            - ca_bundle_cm_created.rc is defined
-            - ca_bundle_cm_created.rc == 0
           block:
-            - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
-              command: >
-                {{ openshift_cli }} create configmap "{{ ingress_ca_cm_name }}-bundle" -n openshift-config
+            - name: '{{ ansible_name_module }} | set_fact | ingress_ca_injection_cm_name '
+              ansible.builtin.set_fact:
+                ingress_ca_injection_cm_name: "{{ ingress_ca_cm_name }}-bundle"
+              when:
+                - not ingress_ca_injection_cm_name is defined or ingress_ca_injection_cm_name == ''
 
-            - name: '{{ ansible_name_module }} | Add label to empty ConfigMap created above to use as CA injection CM'
-              command: >
-                {{ openshift_cli }} label configmap "{{ ingress_ca_cm_name }}-bundle" config.openshift.io/inject-trusted-cabundle=true -n openshift-config
+            - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM' 
+              ansible.builtin.command: >
+                {{ openshift_cli }} create configmap {{ ingress_ca_injection_cm_name }} -n openshift-config
+
+            - name: '{{ ansible_name_module }} | Add label to empty ConfigMap created above to use as CA injection CM' 
+              ansible.builtin.command: >
+                {{ openshift_cli }} label configmap {{ ingress_ca_injection_cm_name }} config.openshift.io/inject-trusted-cabundle=true -n openshift-config
+

@@ -11,23 +11,64 @@
     ansible_name_module: "Configure Custom Certificate | {{ module }}"
   pre_tasks:
     - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      when:
+        - not decrypt_values is defined or not decrypt_values | bool
       block:
-        - assert:
+        - ansible.builtin.assert:
             that:
               - add_custom_cert_api is defined and add_custom_cert_api | bool
             msg: " the add_custom_cert_api must be set to true "
-        - assert:
+        - ansible.builtin.assert:
             that:
               - cluster_api_fqdn is defined and cluster_api_fqdn != ''
             msg: " the cluster_api_fqdn must be set to true "
-        - assert:
+        - ansible.builtin.assert:
             that:
               - api_cert_file is defined and api_cert_file != ""
             msg: " the api_cert_file must be set and valid "
-        - assert:
+        - ansible.builtin.assert:
             that:
               - api_cert_key_file is defined and api_cert_key_file != ""
             msg: " the api_cert_key_file must be set and valid "
+
+    - name: '{{ ansible_name_module }} Process encryted Certificate files'
+      when:
+        - decrypt_values is defined
+        - decrypt_values | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | file_decryption_staging_dir '
+          ansible.builtin.set_fact:
+            file_decryption_staging_dir: "{{ staging_dir | d('/tmp', true) }}/decrypted-files"
+          when:
+            - not file_decryption_staging_dir is defined or not file_decryption_staging_dir != ''
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the staging dir exist '
+          ansible.builtin.file:
+            path: "{{ file_decryption_staging_dir }}"
+            state: directory
+            mode: 0777
+        ### might need to update this to use the ca chain instead of just the cert
+        #if so we will replace ingress_crt_b64 with ingress_ca_b64
+            #content: "{{ ingress_crt_b64 | ansible.builtin.b64decode }}"
+        - name: '{{ ansible_name_module }} | decrypt file | custom cert file'
+          ansible.builtin.copy:
+            content: "{{ ingress_ca_b64 | ansible.builtin.b64decode }}"
+            dest: "{{ file_decryption_staging_dir }}/api-server.crt"
+            force: yes
+
+        - name: '{{ ansible_name_module }} | set_fact | api_cert_file '
+          ansible.builtin.set_fact:
+            api_cert_file: "{{ file_decryption_staging_dir }}/api-server.crt"
+
+        - name: '{{ ansible_name_module }} | decrypt file | custom cert key'
+          ansible.builtin.copy:
+            content: "{{ ingress_key_b64 | ansible.builtin.b64decode }}"
+            dest: "{{ file_decryption_staging_dir }}/api-server.key"
+            force: yes
+
+        - name: '{{ ansible_name_module }} | set_fact | api_cert_key_file '
+          ansible.builtin.set_fact:
+            api_cert_key_file: "{{ file_decryption_staging_dir }}/api-server.key"
              
     - name: Install required pip library
       pip:
@@ -71,25 +112,77 @@
           register: api_cert_key_file_exist
 
   tasks:
-    - name: '{{ ansible_name_module }} | Configure API server to use custom certificate'
+    - name: '{{ ansible_name_module }} | Retrieve a fresh kubeconfig that can be used during the update'
+      when:
+        - update_kubeconfig is defined
+        - update_kubeconfig | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | kubeconfig_staging_dir '
+          ansible.builtin.set_fact:
+            kubeconfig_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}"
+          when:
+            - not kubeconfig_staging_dir is defined or not kubeconfig_staging_dir != ''
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the kubeconfig file stagin dir exist '
+          ansible.builtin.file:
+            path: "{{ kubeconfig_staging_dir }}"
+            state: directory
+            mode: 0777
+
+        - name: '{{ ansible_name_module }} | Retrieve current kubeconfig file '
+          ansible.builtin.command: >
+            {{ openshift_cli }} config view --flatten > {{ kubeconfig_staging_dir }}/kubeconfig-newapi
+          ignore_errors: true
+          register: kubeconfig_ca_retrieved
+
+    - name: '{{ ansible_name_module }} | Configure api server to use custom certificate'
       when:
         - api_cert_file_exist is defined
         - api_cert_file_exist.stat is defined
-        - api_cert_file_exist.isreg is defined
-        - api_cert_file_exist.isreg | bool
+        - api_cert_file_exist.stat.isreg is defined
+        - api_cert_file_exist.stat.isreg | bool 
         - api_cert_key_file_exist is defined
         - api_cert_key_file_exist.stat is defined
         - api_cert_key_file_exist.stat.isreg is defined
-        - api_cert_key_file_exist.stat.isreg | bool
+        - api_cert_key_file_exist.stat.isreg | bool 
       block:
+        - name: '{{ ansible_name_module }} | Get cluster basedomain'
+          ansible.builtin.command: >
+            {{ openshift_cli }}  get dns cluster -o jsonpath='{.spec.baseDomain}{"\n"}'
+          ignore_errors: yes
+          when:
+            - not cluster_api_fqdn is defined or cluster_api_fqdn == ''
+          register: cluster_base_domain_out
+
+        - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
+          ansible.builtin.command: >
+            {{ openshift_cli }} get infrastructure cluster -o jsonpath='{.status.infrastructureName}{"\n"}'
+          register: cluster_infra_name
+
+        - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+          ansible.builtin.set_fact:
+            cluster_name: "{{ cluster_infra_name.stdout }}"
+          when:
+            - cluster_infra_name.stdout is defined
+            - cluster_infra_name.stdout != ''
+
+        - name: '{{ ansible_name_module }} | set_fact | cluster_api_fqdn '
+          ansible.builtin.set_fact:
+            cluster_api_fqdn: "api.{{ cluster_base_domain_out.stdout }}"
+          when:
+            - not cluster_api_fqdn is defined or cluster_api_fqdn == ''
+            - cluster_base_domain_out is defined
+            - cluster_base_domain_out.stdout is defined
+            - cluster_base_domain_out.stdout != '' 
+
         - name: '{{ ansible_name_module }} | Get Existing API custom cert secret'
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} get secret api-secret -n openshift-config
           ignore_errors: yes
           register: api_secret_exist
 
-        - name: '{{ ansible_name_module }} | Delete Existing API custom cert secret'
-          command: >
+        - name: '{{ ansible_name_module }} | Delete Existing API custom cert secret' 
+          ansible.builtin.command: >
             {{ openshift_cli }} delete secret api-secret -n openshift-config
           ignore_errors: yes
           when:
@@ -98,17 +191,17 @@
           register: api_secret_exist
 
         - name: '{{ ansible_name_module }} | create API custom cert secret'
-          command: >
+          ansible.builtin.command: >
             {{ openshift_cli }} create secret tls api-secret --cert={{ api_cert_file }} --key={{ api_cert_key_file }} -n openshift-config
 
         - name: '{{ ansible_name_module }} | Patch API Server'
-          command: >
-                  {{ openshift_cli }} patch apiserver cluster --type=merge -p  '{"spec": {"servingCerts": {"namedCertificates": [{"names": ["{{ cluster_api_fqdn }}"], "servingCertificate": {"name": "api-secret"}}]}}}' -n openshift-ingress-operator
+          ansible.builtin.command: >
+            {{ openshift_cli }} patch apiserver cluster --type=merge -p  '{"spec": {"servingCerts": {"namedCertificates": [{"names": ["{{ cluster_api_fqdn }}"], "servingCertificate": {"name": "api-secret"}}]}}}'
           register: apiserver_patched
 
-        - name: '{{ ansible_name_module }} | Verify API Server Cert Config'
-          shell: >
-            {{ openshift_cli }} get apiserver cluster -o yaml | grep -i '{{ cluster_api_fqdn }}'
+        - name: '{{ ansible_name_module }} | Verify API Server Cert Config' 
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get apiserver cluster -o yaml | grep -i '{{ cluster_api_fqdn }}' 
           register: apiserver_patch_check
 
         - name: '{{ ansible_name_module }} | Update kubeconfig with custom CA if appropriate'
@@ -119,65 +212,56 @@
             - kubeconfig_file != ''
           block:
             - name: '{{ ansible_name_module }} | config custom Cert API | check kubeconfig file'
-              become: yes
-              stat:
+              ansible.builtin.stat:
                 path: "{{ kubeconfig_file }}"
               register: kubeconfig_file_exist
 
             - name: '{{ ansible_name_module }} | config custom Cert API | Retrieve encoded CA data from kubeconfig file'
-              become: yes
-              shell: >
+              ansible.builtin.shell: >
                 cat {{ kubeconfig_file }} | grep certificate-authority-data | awk '{print $2}' 
               register: kubeconfig_ca_data
 
-            - name: '{{ ansible_name_module }} | config custom Cert API | Save decoded CA data from kubeconfig file to file'
-              become: yes
-              shell: >
-                cat {{ kubeconfig_file }} | grep certificate-authority-data | awk '{print $2}' | base64 -d > {{ original_ca_file | default('/tmp/ca-bundle-orig.crt', true) }}
-              when:
-                - use_ca_from_kubeconfig is defined
-                - use_ca_from_kubeconfig | bool 
-              register: kubeconfig_ca_data_file
+            - name: '{{ ansible_name_module }} | Retrieve current kubeconfig CA '
+              ansible.builtin.command: >
+                {{ openshift_cli }} config refresh-ca-bundle --dry-run
+              register: kubeconfig_ca_retrieved
 
-            - name: '{{ ansible_name_module }} | config custom Cert API | Extract original kubeconfig CA from cluster Save'
-              when:
-                - not use_ca_from_kubeconfig is defined or not use_ca_from_kubeconfig | bool
-              block:
-                - name: '{{ ansible_name_module }} | file | extraction folder exist '
-                  ansible.builtin.file:
-                    path: "{{ extracted_kca_file_dir | default('/tmp/kubeconfig-ca', true) }}"
-                    state: directory
-                    mode: '0755'
+            - name: '{{ ansible_name_module }} | Get ingress CA'
+              ansible.builtin.shell: >
+                {{ openshift_cli }} rsh -n openshift-authentication \
+                 $({{ openshift_cli }} get po -n openshift-authentication --no-headers | head -n+1 | awk '{print $1}') \
+                   cat /run/secrets/kubernetes.io/serviceaccount/ca.crt > {{ kubeconfig_staging_dir }}/{{ cluster_name }}-ingress-ca.crt
+              register: ingress_ca_out
 
-                - name: '{{ ansible_name_module }} | config custom CA kubeconfig | get admin-kubeconfig-client-ca from  cm'
-                  shell: >
-                    {{ openshift_cli }} extract cm/admin-kubeconfig-client-ca -n openshift-config --to={{ extracted_kca_file_dir | default('/tmp/kubeconfig-ca', true) }} --confirm=true
-                  ignore_errors: true
-                  register: kubeconfig_ca_data_orig_file
-                - name: '{{ ansible_name_module }} | Set ca cert bundle extraction dir'
-                  ansible.builtin.set_fact:
-                    original_ca_file: "{{ extracted_kca_file_dir | default('/tmp/kubeconfig-ca', true) }}/ca-bundle.crt"
+            - name: '{{ ansible_name_module }} | set_fact | kubeconfig_ca_file '
+              ansible.builtin.set_fact:
+                kubeconfig_ca_file: "{{ kubeconfig_staging_dir }}/{{ cluster_name }}-kubeconfig-ca.crt"
+                ingress_ca_file: "{{ kubeconfig_staging_dir }}/{{ cluster_name }}-ingress-ca.crt"
 
-            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | get custom ca data from cm'
-              shell: >
-                {{ openshift_cli }} extract cm/{{ ingress_ca_cm_name | default('user-ca-bundle', false) }} -n openshift-config --to={{ extracted_custom_ca_file | default('/tmp/', true) | dirname }} --confirm=true
-              ignore_errors: true
-              register: custom_ca_data_file
-
-            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Create updated ca-bundle file'
-              shell: >
-                cat {{ original_ca_file | default('/tmp/ca-bundle-orig.crt', true) }} {{ extracted_custom_ca_file | default('/tmp/ca-bundle.crt', true) }} > {{ merged_ca_file | default('/tmp/updated-ca-bundle.crt', true) }}
+            - name: '{{ ansible_name_module }} | write CA to file '
+              ansible.builtin.copy:
+                content: "{{ kubeconfig_ca_retrieved.stdout }}"
+                dest: "{{ kubeconfig_ca_file }}"
+                force: true
+              register: kubeconfig_exported
 
             - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Encode Updated CA Cert'
-              shell: >
-                cat {{ merged_ca_file | default('/tmp/updated-ca-bundle.crt', true) }} | base64 -w0; echo
+              ansible.builtin.shell: >
+                cat {{ kubeconfig_ca_file }} | base64 -w0; echo
               register: updated_ca_bundle_crt
 
+            - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Encode ingress CA Cert'
+              ansible.builtin.shell: >
+                cat {{ ingress_ca_file }} | base64 -w0; echo
+              register: encoded_ingress_ca_bundle_crt
+
+             ### testing the use of te updated ingress ca instead of the whole user-ca-bundle
+                #replace: "certificate-authority-data: {{ updated_ca_bundle_crt.stdout }}"
             - name: '{{ ansible_name_module }} | config custom CA kubeconfig | Update CA Cert in kubeconfig'
-              replace:
+              ansible.builtin.replace:
                 path: "{{ kubeconfig_file }}"
                 regexp: "certificate-authority-data: {{ kubeconfig_ca_data.stdout }}"
-                replace: "certificate-authority-data: {{ updated_ca_bundle_crt.stdout }}"
+                replace: "certificate-authority-data: {{ encoded_ingress_ca_bundle_crt.stdout }}"
                 backup: yes
-              register: updated_kubeconfig 
+              register: updated_kubeconfig
 

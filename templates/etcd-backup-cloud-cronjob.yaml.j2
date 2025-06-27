@@ -1,13 +1,13 @@
 kind: CronJob
 apiVersion: batch/v1
 metadata:
-  name: {{ kubeconfig_service_name }} 
+  name: {{ etcd_backup_service_name }} 
   namespace: {{ platform_infra_ns }} 
   labels:
-    template: kubeconfig-backup-cronjob
-    app.kubernetes.io/instance: kubeconfig-backup
+    template: etcd-backup-cronjob
+    app.kubernetes.io/instance: etcd-backup
 spec:
-  schedule: {{ kubeconfig_cron_jon_schedule_expression | d('25 23 * * 5', true) }}
+  schedule: {{ etcd_backup_cron_job_schedule_expression | d('25 23 * * 5', true) }}
   startingDeadlineSeconds: 1800
   concurrencyPolicy: Forbid
   suspend: false
@@ -32,7 +32,7 @@ spec:
                 requests:
                   cpu: 200m
                   memory: 400Mi
-              name: kubeconfig-backup 
+              name: etcd-backup 
               env:
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
@@ -45,13 +45,15 @@ spec:
                       name: {{ aws_account_creds_secret }} 
                       key: aws_access_secret
                 - name: AWS_BUCKET
-                  value: {{ kubeconfig_aws_bucket }} 
+                  value: {{ etcd_backup_aws_bucket }} 
                 - name: AWS_BUCKET_OBJECT
-                  value: {{ kubeconfig_aws_bucket_object }} 
+                  value: {{ etcd_backup_aws_bucket_object }} 
                 - name: AWS_DEFAULT_REGION
                   value: {{ aws_region }} 
                 - name: AWS_CA_BUNDLE
                   value: {{ aws_ca_bundle_path }} 
+                - name: BACKUP_DATE
+                  value: {{ etcd_backup_date }} 
               image: {{ aws_cli_image_registry_repository }}/{{ aws_cli_image_name }}
               imagePullPolicy: IfNotPresent
               volumeMounts:
@@ -67,7 +69,7 @@ spec:
               command: ["/bin/sh"]
               args:
                 - -c
-                - 'chroot /host sudo mkdir -p /home/core/assets/kubeconfig-backup-$(date +"%d-%m-%Y") && cp -rf /host/etc/kubernetes/static-pod-resources/kube-apiserver-certs/secrets/node-kubeconfigs/* /host/etc/kubernetes/static-pod-resources/etcd-certs /host/etc/kubernetes/static-pod-resources/configmaps /host/home/core/assets/kubeconfig-backup-$(date +"%d-%m-%Y")/ && aws s3 ls "s3://$AWS_BUCKET" 2>&1 || aws s3 mb s3://$AWS_BUCKET --region $AWS_DEFAULT_REGION && aws s3 --region $AWS_DEFAULT_REGION sync /host/home/core/assets/kubeconfig-backup-$(date +"%d-%m-%Y")/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/kubeconfig-$(date +"%d-%m-%Y")" && rm -rf /host/home/core/assets/kubeconfig-backup-$(date +"%d-%m-%Y")'
+                - 'chroot /host mkdir -p /home/core/assets/etcd-backup-$BACKUP_DATE && chroot /host /usr/local/bin/cluster-backup.sh /home/core/assets/etcd-backup-$BACKUP_DATE/backup && aws s3 ls "s3://$AWS_BUCKET" 2>&1 || aws s3 mb s3://$AWS_BUCKET --region $AWS_DEFAULT_REGION && aws s3 --region $AWS_DEFAULT_REGION sync /host/home/core/assets/etcd-backup-$BACKUP_DATE/backup/ "s3://$AWS_BUCKET/$AWS_BUCKET_OBJECT/etcd-backup-$BACKUP_DATE" && sleep 60 && rm -rf /host/home/core/assets/etcd-backup-backup-$BACKUP_DATE'
           volumes:
             - hostPath:
                 path: /
@@ -89,8 +91,8 @@ spec:
           hostPID: true
           schedulerName: default-scheduler
           securityContext: {}
-          serviceAccount: {{ kubeconfig_service_account }} 
-          serviceAccountName: {{ kubeconfig_service_account }}
+          serviceAccount: {{ etcd_backup_service_account }} 
+          serviceAccountName: {{ etcd_backup_service_account }}
           terminationGracePeriodSeconds: 30
           tolerations:
             - operator: Exists

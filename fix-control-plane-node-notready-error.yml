@@ -1,10 +1,10 @@
-- name: ' Konductor | Provision UPI Infra | fix-node-notready-error.yml'
+- name: ' Konductor | Provision UPI Infra | fix-control-plane-node-notready-error.yml'
   hosts: localhost
   vars_files:
     - 'vars/vault.yml'
     - 'vars/global.yml'
   vars:
-    module: "Fix Node NotReady error "
+    module: "Fix Conrol Plane Node NotReady error "
     ansible_name_module: " Post Cluster Installation | {{ module }}"
 
   pre_tasks:
@@ -63,26 +63,26 @@
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster member list'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
-          {{ etcd_guard_rep_out.stdout }}  -- etcdctl member list -w table
+          {{ etcd_guard_rep_out.stdout }}  -- etcdctl member list -w table 
       register: etcd_member_list_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster leader info'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
-          {{ etcd_guard_rep_out.stdout }} -- etcdctl endpoint status -w table
+          {{ etcd_guard_rep_out.stdout }} -- etcdctl endpoint status -w table 
       register: etcd_leader_info_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster member to remove'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
-          {{ etcd_guard_rep_out.stdout }}  -- etcdctl endpoint health -w table
+          {{ etcd_guard_rep_out.stdout }}  -- etcdctl endpoint health -w table 
       register: etcd_member_to_remove_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster member for node not ready'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
           {{ etcd_guard_rep_out.stdout }} -- etcdctl member list -w table \
-           | grep {{ node_notready_out.stdout }}
+           | grep {{ node_notready_out.stdout }} 
       register: etcd_member_node_notready_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster member ID for node not ready'
@@ -95,68 +95,68 @@
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Remove etcd cluster member for node not ready'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
-         {{ etcd_guard_rep_out.stdout }}  -- etcdctl member remove {{ etcd_member_id_node_notready_out.stdout }}
+         {{ etcd_guard_rep_out.stdout }}  -- etcdctl member remove {{ etcd_member_id_node_notready_out.stdout }} 
       register: etcd_member_removed_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | override  etcd cluster CR to be unsupported to allow new member rollout'
       ansible.builtin.shell: >
-        {{ openshift_cli }} patch etcd cluster --type=merge -p '{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}'
+        {{ openshift_cli }} patch etcd cluster --type=merge -p '{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' 
       register: etcd_cluster_patched_unsupported_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster member list post patch'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
-          {{ etcd_guard_rep_out.stdout }}  -- etcdctl member list -w table
+          {{ etcd_guard_rep_out.stdout }}  -- etcdctl member list -w table 
       register: etcd_member_list_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Retrieve etcd cluster member health post patch'
       ansible.builtin.shell: >
         {{ openshift_cli }} exec  -n openshift-etcd  \
-          {{ etcd_guard_rep_out.stdout }}  -- etcdctl endpoint health
+          {{ etcd_guard_rep_out.stdout }}  -- etcdctl endpoint health 
       register: etcd_member_list_out
 
-     #### This might not be necessary
+     #### This might not be necessary 
     - name: '{{ ansible_name_module }} | remove etcd secret for the notready node if applicable'
       when:
         - remove_etcd_secrets_for_notready_node is defined
-        - remove_etcd_secrets_for_notready_node | bool
+        - remove_etcd_secrets_for_notready_node | bool 
       block:
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve secret for etcd cluster member for node not ready'
           ansible.builtin.shell: >
-            {{ openshift_cli }} get --no-headers secrets -n openshift-etcd | grep {{ node_notready_out.stdout }}
+            {{ openshift_cli }} get --no-headers secrets -n openshift-etcd | grep {{ node_notready_out.stdout }} 
           register: etcd_member_to_be_removed_secrets_out
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | remove secrets for etcd cluster member for node not ready'
           ansible.builtin.shell: >
-            {{ openshift_cli }} delete secrets -n openshift-etcd {{ etcd_member_to_be_removed_secrets_out.stdout }}
+            {{ openshift_cli }} delete secrets -n openshift-etcd {{ etcd_member_to_be_removed_secrets_out.stdout }} 
           when:
             - etcd_member_to_be_removed_secrets_out is defined
             - etcd_member_to_be_removed_secrets_out.rc is defined
-            - etcd_member_to_be_removed_secrets_out.rc== 0
+            - etcd_member_to_be_removed_secrets_out.rc== 0 
             - etcd_member_to_be_removed_secrets_out.stdout_lines is defined
-            - etcd_member_to_be_removed_secrets_out.stdout_lines | length > 0
+            - etcd_member_to_be_removed_secrets_out.stdout_lines | length > 0 
           register: etcd_member_to_be_removed_secrets_out
 
      #### This will hang and might not be worth doing
     - name: '{{ ansible_name_module }} | force removal of deleting machines if applicable'
       when:
         - force_remove_deleting_machine is defined
-        - force_remove_deleting_machine | bool
+        - force_remove_deleting_machine | bool 
       block:
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve deleting machines '
           ansible.builtin.shell: >
-            {{ openshift_cli }} get machines -n openshift-machine-api | grep -i deleting | awk '{print $1}'
+            {{ openshift_cli }} get machines -n openshift-machine-api | grep -i deleting | awk '{print $1}' 
           register: deleting_machine_out
 
         - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | force remove deleting machine'
           ansible.builtin.shell: >
-            {{ openshift_cli }} delete machine -n openshift-machine-api --force  {{ deleting_machine_out.stdout }}
+            {{ openshift_cli }} delete machine -n openshift-machine-api --force  {{ deleting_machine_out.stdout }} 
           when:
             - deleting_machine_out is defined
             - deleting_machine_out.rc is defined
-            - deleting_machine_out.rc == 0
+            - deleting_machine_out.rc == 0 
             - deleting_machine_out.stdout is defined
-            - deleting_machine_out.stdout != ''
+            - deleting_machine_out.stdout != '' 
           register: force_deleting_machine_out
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | remove unsupported override value from etcd cluster CR '
@@ -171,5 +171,5 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve etcd cluster pods '
       ansible.builtin.shell: >
-        {{ openshift_cli }} get pods -n openshift-etcd | grep etcd
+        {{ openshift_cli }} get pods -n openshift-etcd | grep etcd 
 

@@ -1,4 +1,4 @@
-- name: 'Configure kubeconfig Backup Cron Job  | configure-kubeconfig download-cronjob.yml'
+- name: 'Configure etcd  Backup Cron Job  | configure-etcd-backup-cronjob.yml'
   hosts: localhost
   become: yes
   vars:
@@ -8,8 +8,8 @@
     - 'vars/global.yml'
     - 'vars/infra.yml'
   vars:
-    module: "configure-kubeconfig download-cron"
-    ansible_name_module: "Configure kubeconfig Backup Cron Job | {{ module }}"
+    module: "configure etcd backup cron"
+    ansible_name_module: "Configure ETCD Backup Cron Job | {{ module }}"
 
   pre_tasks:
     - name: '{{ ansible_name_module }} | assert | The AWS access key is defined '
@@ -61,7 +61,7 @@
       register: login_out
 
   tasks:
-    - name: '{{ ansible_name_module }} | Create kubeconfig Backup Namespace'
+    - name: '{{ ansible_name_module }} | Create ETCD Backup Namespace'
       block:
         ##### Adding this to bypass restrictions on creating project with names starting with openshift  #####
         - name: '{{ ansible_name_module }} |  Create etcd backup Namespace'
@@ -101,7 +101,7 @@
       register: sa_created
 
        ### You need to have cluster admin role to run this task
-    - name: Grant SCC Privilege to the kubeconfig Backup service account
+    - name: Grant SCC Privilege to the ETCD Backup service account
       when:
          - add_privileged_scc_to_etcd_backup_sa is defined
          - add_privileged_scc_to_etcd_backup_sa | default('false') | bool
@@ -182,7 +182,7 @@
           vars:
           register: etcd_backup_cronjob_copied
 
-        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create kubeconfig backup cron job'
+        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create ETCD backup cron job'
           ansible.builtin.command: >
             {{ openshift_cli }} apply -f {{ etcd_backup_cronjob_copied.dest }}
           when:
