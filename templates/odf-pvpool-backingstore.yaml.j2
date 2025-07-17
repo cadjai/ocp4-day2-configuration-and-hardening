@@ -1,20 +1,18 @@
-apiVersion: v1
-items:
-- apiVersion: noobaa.io/v1alpha1
-  kind: BackingStore
-  metadata:
-    finalizers:
-    - noobaa.io/finalizer
-    labels:
-      app: noobaa
-    name: {{ odf_noobaa_pvbackingstore_name }}
-    namespace: openshift-storage
-  spec:
-    pvPool:
-      numVolumes: 1
-      resources:
-        requests:
-          storage: {{ odf_noobaa_pvbackingstore_size }}
-      secret: {}
-      storageClass: {{ odf_noobaa_pvbackingstore_sc }}
-    type: pv-pool
+apiVersion: noobaa.io/v1alpha1
+kind: BackingStore
+metadata:
+  finalizers:
+  - noobaa.io/finalizer
+  labels:
+    app: noobaa
+  name: {{ odf_noobaa_pvbackingstore_name }}
+  namespace: openshift-storage
+spec:
+  pvPool:
+    numVolumes: {{ odf_noobaa_pvbackingstore_vol_count | default('3', true) }}
+    resources:
+      requests:
+        storage: {{ odf_noobaa_pvbackingstore_size }}
+    secret: {}
+    storageClass: {{ odf_noobaa_pvbackingstore_sc }}
+  type: pv-pool

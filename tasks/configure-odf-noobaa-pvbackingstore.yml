@@ -17,11 +17,25 @@
   when:
     - not odf_noobaa_pvbackingstore_sc is defined or odf_noobaa_pvbackingstore_sc == ''
 
-- name: '{{ ansible_name_module }} | set_fact | set odf pv backing store OBC SC name if not provided '
+- name: '{{ ansible_name_module }} | set_fact | set odf pv backing store OBC SC name correctly'
+  ansible.builtin.set_fact:
+    odf_noobaa_pvbackingstore_obc_sc: "{{ odf_noobaa_pvbackingstore_obc_sc }}-noobaa.noobaa.io"
+  when:
+    - odf_noobaa_pvbackingstore_obc_sc is defined 
+    - odf_noobaa_pvbackingstore_obc_sc != ''
+    - "not '-noobaa.noobaa.io' in odf_noobaa_pvbackingstore_obc_sc"
+
+- name: '{{ ansible_name_module }} | set_fact | set odf pv backing store OBC SC name if not provided'
   ansible.builtin.set_fact:
     odf_noobaa_pvbackingstore_obc_sc: 'openshift-storage.noobaa.io'
   when:
     - not odf_noobaa_pvbackingstore_obc_sc is defined or odf_noobaa_pvbackingstore_obc_sc == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf pv backing store OBC pv vol count if not provided '
+  ansible.builtin.set_fact:
+    odf_noobaa_pvbackingstore_vol_count: '3'
+  when:
+    - not odf_noobaa_pvbackingstore_vol_count is defined or odf_noobaa_pvbackingstore_vol_count == '' or odf_noobaa_pvbackingstore_vol_count | int < 3
 
 - name: '{{ ansible_name_module }} | set_fact | set odf pv backing store Bucket Class name if not provided '
   ansible.builtin.set_fact:
@@ -29,22 +43,29 @@
   when:
     - not odf_noobaa_pvbackingstore_bc is defined or odf_noobaa_pvbackingstore_bc == ''
 
-- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Backing Store'
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Backing Store SC '
   ansible.builtin.command: >
     {{ openshift_cli }} get sc {{ odf_noobaa_pvbackingstore_obc_sc }} -o name
   ignore_errors: true
   register: obc_backingstore_sc_exist
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Backing Store pvpool SC '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get sc {{ odf_noobaa_pvbackingstore_sc }} -o name
+  ignore_errors: true
+  register: odf_noobaa_pvbackingstore_sc_exist
 
 - name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is no storage class with the same name' 
   ansible.builtin.assert:
     that:
       - obc_backingstore_sc_exist is defined
       - obc_backingstore_sc_exist.rc is defined
-      - obc_backingstore_sc_exist.rc == 0 
-      - obc_backingstore_sc_exist.stdout is defined
-      - obc_backingstore_sc_exist.stdout != '' 
-      - not odf_noobaa_pvbackingstore_obc_sc in obc_backingstore_sc_exist.stdout
+      - obc_backingstore_sc_exist.rc >= 0 
+      - (obc_backingstore_sc_exist.stdout is defined and obc_backingstore_sc_exist.stdout != '' and not "odf_noobaa_pvbackingstore_obc_sc in obc_backingstore_sc_exist.stdout") or (obc_backingstore_sc_exist.stderr is defined)
     msg: " There is an existing storage class with the name provided . You need to provide a different name."
+  when:
+    - create_obc_backingstore_sc is defined 
+    - create_obc_backingstore_sc | bool
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Backing Store'
   ansible.builtin.command: >
@@ -57,10 +78,8 @@
     that:
       - obc_backingstore_exist is defined
       - obc_backingstore_exist.rc is defined
-      - obc_backingstore_exist.rc == 0 
-      - obc_backingstore_exist.stdout is defined
-      - obc_backingstore_exist.stdout != '' 
-      - "not 'Ready' in obc_backingstore_exist.stdout"
+      - obc_backingstore_exist.rc >= 0 
+      - (obc_backingstore_exist.stdout is defined and obc_backingstore_exist.stdout != '' and  "not 'Ready' in obc_backingstore_exist.stdout") or (obc_backingstore_exist.stderr is defined and obc_backingstore_exist.stderr != '') 
     msg: " There is a backing store with the name provided in ready state. You need to manually remove it or provide a different name. "
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Bucket Class'
@@ -85,10 +104,8 @@
     that:
       - obc_bucketclass_exist is defined
       - obc_bucketclass_exist.rc is defined
-      - obc_bucketclass_exist.rc == 0 
-      - obc_bucketclass_exist.stdout is defined
-      - obc_bucketclass_exist.stdout != '' 
-      - "'Ready' in obc_backingstore_exist.stdout"
+      - obc_bucketclass_exist.rc >= 0 
+      - (obc_bucketclass_exist.stdout is defined and obc_bucketclass_exist.stdout != '' and "'Ready' in obc_backingstore_exist.stdout") or (obc_bucketclass_exist.stderr is defined and obc_bucketclass_exist.stderr != '')
     msg: " There is a bucket class with the name provided in ready state. You need to manually remove it or provide a different name."
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Bucket Class'
@@ -107,6 +124,12 @@
     src: "templates/odf-pvpool-backingstore.yaml.j2"
     dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_noobaa_pvbackingstore_name }}-odf-pvpool-backingstore.yaml"
     force: yes
+  when:
+    - odf_noobaa_pvbackingstore_sc_exist is defined
+    - odf_noobaa_pvbackingstore_sc_exist.rc is defined
+    - odf_noobaa_pvbackingstore_sc_exist.rc == 0 
+    - odf_noobaa_pvbackingstore_sc_exist.stdout is defined
+    - odf_noobaa_pvbackingstore_sc_exist.stdout != '' 
   register: pvpool_bs_cr_copied
 
 - name: '{{ ansible_name_module }} | template | PV Backingstore Bucket Class CR'
