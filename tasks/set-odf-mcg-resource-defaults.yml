@@ -1,0 +1,121 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | set odf_ns '
+  ansible.builtin.set_fact:
+    odf_ns: "openshift-storage"
+  when:
+    - not odf_ns is defined or odf_ns == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_storage_cluster '
+  ansible.builtin.set_fact:
+    odf_storage_cluster: "ocs-storagecluster"
+  when:
+    - not odf_storage_cluster is defined or odf_storage_cluster == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_core_mem_limit '
+  ansible.builtin.set_fact:
+    noobaa_core_mem_limit: "4Gi"
+  when:
+    - not noobaa_core_mem_limit is defined or noobaa_core_mem_limit == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_core_mem_request '
+  ansible.builtin.set_fact:
+    noobaa_core_mem_request: "4Gi"
+  when:
+    - not noobaa_core_mem_request is defined or noobaa_core_mem_request == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_core_cpu_limit '
+  ansible.builtin.set_fact:
+    noobaa_core_cpu_limit: "3"
+  when:
+    - not noobaa_core_cpu_limit is defined or noobaa_core_cpu_limit == '' or noobaa_core_cpu_limit | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_core_cpu_request '
+  ansible.builtin.set_fact:
+    noobaa_core_cpu_request: "3"
+  when:
+    - not noobaa_core_cpu_request is defined or noobaa_core_cpu_request == '' or noobaa_core_cpu_request | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_db_mem_limit '
+  ansible.builtin.set_fact:
+    noobaa_db_mem_limit: "4Gi"
+  when:
+    - not noobaa_db_mem_limit is defined or noobaa_db_mem_limit == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_db_mem_request '
+  ansible.builtin.set_fact:
+    noobaa_db_mem_request: "4Gi"
+  when:
+    - not noobaa_db_mem_request is defined or noobaa_db_mem_request == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_db_cpu_limit '
+  ansible.builtin.set_fact:
+    noobaa_db_cpu_limit: "3"
+  when:
+    - not noobaa_db_cpu_limit is defined or noobaa_db_cpu_limit == '' or noobaa_db_cpu_limit | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_db_cpu_request '
+  ansible.builtin.set_fact:
+    noobaa_db_cpu_request: "3"
+  when:
+    - not noobaa_db_cpu_request is defined or noobaa_db_cpu_request == '' or noobaa_db_cpu_request | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_endpoint_mem_limit '
+  ansible.builtin.set_fact:
+    noobaa_endpoint_mem_limit: "4Gi"
+  when:
+    - not noobaa_endpoint_mem_limit is defined or noobaa_endpoint_mem_limit == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_endpoint_mem_request '
+  ansible.builtin.set_fact:
+    noobaa_endpoint_mem_request: "4Gi"
+  when:
+    - not noobaa_endpoint_mem_request is defined or noobaa_endpoint_mem_request == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_endpoint_cpu_limit '
+  ansible.builtin.set_fact:
+    noobaa_endpoint_cpu_limit: "3"
+  when:
+    - not noobaa_endpoint_cpu_limit is defined or noobaa_endpoint_cpu_limit == '' or noobaa_endpoint_cpu_limit | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_endpoint_cpu_request '
+  ansible.builtin.set_fact:
+    noobaa_endpoint_cpu_request: "3"
+  when:
+    - not noobaa_endpoint_cpu_request is defined or noobaa_endpoint_cpu_request == '' or noobaa_endpoint_cpu_request | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_mcg_min_count'
+  ansible.builtin.set_fact:
+    noobaa_mcg_min_count: "3"
+  when:
+    - not noobaa_mcg_min_count is defined or noobaa_mcg_min_count == '' or noobaa_mcg_min_count | int < 3
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_mcg_max_count'
+  ansible.builtin.set_fact:
+    noobaa_mcg_max_count: "10"
+  when:
+    - not noobaa_mcg_max_count is defined or noobaa_mcg_max_count == '' or noobaa_mcg_max_count | int < 10
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_pvpool_bs_mem_limit '
+  ansible.builtin.set_fact:
+    noobaa_pvpool_bs_mem_limit: "500Mi"
+  when:
+    - not noobaa_pvpool_bs_mem_limit is defined or noobaa_pvpool_bs_mem_limit == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_pvpool_bs_mem_request '
+  ansible.builtin.set_fact:
+    noobaa_pvpool_bs_mem_request: "400Mi"
+  when:
+    - not noobaa_pvpool_bs_mem_request is defined or noobaa_pvpool_bs_mem_request == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_pvpool_bs_cpu_limit '
+  ansible.builtin.set_fact:
+    noobaa_pvpool_bs_cpu_limit: "1000m"
+  when:
+    - not noobaa_pvpool_bs_cpu_limit is defined or noobaa_pvpool_bs_cpu_limit == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set noobaa_pvpool_bs_cpu_request '
+  ansible.builtin.set_fact:
+    noobaa_pvpool_bs_cpu_request: "500m"
+  when:
+    - not noobaa_pvpool_bs_cpu_request is defined or noobaa_pvpool_bs_cpu_request == ''
+

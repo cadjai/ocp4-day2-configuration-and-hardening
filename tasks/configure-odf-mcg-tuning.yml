@@ -1,0 +1,63 @@
+---
+- name: '{{ ansible_name_module }} | Add odf mcg resources defaults '
+  ansible.builtin.include_tasks: tasks/set-odf-mcg-resource-defaults.yml
+
+- name: '{{ ansible_name_module }} | retrieve the storage cluster is configured'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get storagecluster {{ odf_storage_cluster }} -n {{ odf_ns }} --no-headers | awk '{print $1}' 
+  ignore_errors: true
+  register: storage_cluster_exist 
+
+- name: '{{ ansible_name_module }} | ensure the storage cluster exists'
+  ansible.builtin.assert:
+    that:
+      - storage_cluster_exist is defined
+      - storage_cluster_exist.rc is defined
+      - storage_cluster_exist.rc == 0
+      - storage_cluster_exist.stdout is defined
+      - storage_cluster_exist.stdout != ''
+      - "'ocs-storagecluster' in storage_cluster_exist.stdout"
+    msg: " the storagecluster named {{ odf_storage_cluster }}  must exist in the cluster"
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | update storagecluster - set resource sizing'
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch  storagecluster {{ odf_storage_cluster }} -n {{ odf_ns }} --type merge \
+       --patch '{"spec": {"resources": {"noobaa-core": {"limits": {"cpu": "{{ noobaa_core_cpu_limit }}","memory": "{{ noobaa_core_mem_limit }}"},"requests": {"cpu": "{{ noobaa_core_cpu_request }}", "memory": "{{ noobaa_core_mem_request }}"}},"noobaa-db": {"limits": {"cpu": "{{ noobaa_db_cpu_limit }}", "memory": "{{ noobaa_db_mem_limit }}"},"requests": {"cpu": "{{ noobaa_db_cpu_request }}", "memory": "{{ noobaa_db_mem_request }}"}},"noobaa-endpoint": {"limits": {"cpu": "{{ noobaa_endpoint_cpu_limit }}","memory": "{{ noobaa_endpoint_mem_limit }}"},"requests": {"cpu": "{{ noobaa_endpoint_cpu_request }}","memory": "{{ noobaa_endpoint_mem_request }}"}}}}}'
+  register: storage_cluster_resources_patched 
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | update storagecluster - set resource sizing'
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch  storagecluster {{ odf_storage_cluster }} -n {{ odf_ns }} --type merge \
+       --patch '{"spec": {"multiCloudGateway": {"endpoints": {"minCount": {{ noobaa_mcg_min_count }}, "maxCount": {{ noobaa_mcg_max_count }}}}}}' 
+  register: storage_cluster_mcg_count_patched 
+
+- name: '{{ ansible_name_module }} | retrieve the pvpool backingstore'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backingstore -n {{ odf_ns }} -ojson | jq -r '.items[] | select(.spec.type) | {"name": .metadata.name, "type": .spec.type}' | jq -s 
+  ignore_errors: true
+  register: pvpool_backingstore_exist 
+
+- name: '{{ ansible_name_module }} | ensure the pvpool backingstore exists'
+  ansible.builtin.assert:
+    that:
+      - pvpool_backingstore_exist is defined
+      - pvpool_backingstore_exist.rc is defined
+      - pvpool_backingstore_exist.rc == 0
+      - pvpool_backingstore_exist.stdout is defined
+      - pvpool_backingstore_exist.stdout != ''
+      - pvpool_backingstore_exist.stdout_lines is defined
+      - pvpool_backingstore_exist.stdout_lines | length > 0 
+    msg: " the pvpool backingstore must exist in the cluster to apply tuning"
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | update pvpool backingstore - set resource sizing'
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch BackingStore {{ item.name }} -n {{ odf_ns }} --type merge \
+       --patch '{"spec": {"pvpool": {"resources": {"limits": {"cpu": "{{ noobaa_pvpool_bs_cpu_limit }}","memory": "{{ noobaa_pvpool_bs_mem_limit }}"}, "requests": {"cpu": "{{ noobaa_pvpool_bs_cpu_request }}", "{{ noobaa_pvpool_bs_mem_request }}"}}}}'
+  loop: "{{ pvpool_backingstore_exist.stdout_lines }}"
+  when:
+    - item.name is defined
+    - item.name != ''
+    - item.type is defined 
+    - item.type != '' 
+    - "'pv-pool' in item.type"
+  register: storage_cluster_resources_patched 

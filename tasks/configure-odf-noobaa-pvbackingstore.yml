@@ -1,4 +1,7 @@
 ---
+- name: '{{ ansible_name_module }} | Add odf mcg resources defaults '
+  ansible.builtin.include_tasks: tasks/set-odf-mcg-resource-defaults.yml
+
 - name: '{{ ansible_name_module }} | set_fact | set odf pv backing store name if not provided '
   ansible.builtin.set_fact:
     odf_noobaa_pvbackingstore_name: 'noobaa-default-backing-store'
@@ -24,6 +27,7 @@
     - odf_noobaa_pvbackingstore_obc_sc is defined 
     - odf_noobaa_pvbackingstore_obc_sc != ''
     - "not '-noobaa.noobaa.io' in odf_noobaa_pvbackingstore_obc_sc"
+    - "not 'openshift-storage.noobaa.io' in odf_noobaa_pvbackingstore_obc_sc"
 
 - name: '{{ ansible_name_module }} | set_fact | set odf pv backing store OBC SC name if not provided'
   ansible.builtin.set_fact:

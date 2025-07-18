@@ -13,6 +13,11 @@ spec:
     resources:
       requests:
         storage: {{ odf_noobaa_pvbackingstore_size }}
+        cpu: {{ noobaa_pvpool_bs_cpu_request }}
+        memory: {{ noobaa_pvpool_bs_mem_request }}
+      limits:
+        cpu: {{ noobaa_pvpool_bs_cpu_limit }}
+        memory: {{ noobaa_pvpool_bs_mem_limit }}
     secret: {}
     storageClass: {{ odf_noobaa_pvbackingstore_sc }}
   type: pv-pool
