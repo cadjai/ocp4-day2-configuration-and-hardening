@@ -1,0 +1,73 @@
+---
+- name: '{{ ansible_name_module }} | retrieve the configured scc for nooboo core pod '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get po noobaa-core-0 -o 'custom-columns=NAME:metadata.name,APPLIED SCC:metadata.annotations.openshift\.io/scc' -n {{ odf_ns }} --no-headers
+  ignore_errors: true
+  register: noobaa_core_scc
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print scc name output '
+  ansible.builtin.debug:
+    var: noobaa_core_scc.stdout.split("   ")[1]
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ensure the noobaa core pod is using the correct scc (anyuid)'
+  when:
+    - noobaa_core_scc is defined
+    - noobaa_core_scc.rc is defined
+    - noobaa_core_scc.rc == 0
+    - noobaa_core_scc.stdout is defined
+    - noobaa_core_scc.stdout != ''
+    - "not 'anyuid' in noobaa_core_scc.stdout"
+  block:
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | update scc priority'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch scc {{ noobaa_core_scc.stdout.split("   ")[1] }} --type merge --patch '{"priority": 0}'
+      register: scc_patched
+
+    - name: '{{ ansible_name_module }} | ensure the noobaa pods are restarted post scc change'
+      when:
+        - scc_patched is defined
+        - scc_patched.rc is defined
+        - scc_patched.rc == 0
+      block:
+        - name: '{{ ansible_name_module }} | restart nooboo core pod '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete po $(oc get po -n {{ odf_ns }}  --no-headers | grep noobaa-core | awk '{print $1}') -n {{ odf_ns }}
+          register: noobaa_core_restarted
+
+        - name: '{{ ansible_name_module }} | retrieve the configured scc for nooboo core pod '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get po noobaa-core-0 -o 'custom-columns=NAME:metadata.name,APPLIED SCC:metadata.annotations.openshift\.io/scc' -n {{ odf_ns }} --no-headers | awk '{print $2}'
+          ignore_errors: true
+          register: noobaa_core_updatedscc
+
+        - name: '{{ ansible_name_module }} | ensure the noobaa core is using tthe correct scc'
+          ansible.builtin.assert:
+            that:
+              - noobaa_core_updatedscc is defined
+              - noobaa_core_updatedscc.rc is defined
+              - noobaa_core_updatedscc.rc == 0
+              - noobaa_core_updatedscc.stdout is defined
+              - noobaa_core_updatedscc.stdout != ''
+              - "'anyuid' in noobaa_core_updatedscc.stdout"
+
+        - name: '{{ ansible_name_module }} | restart nooboo operator pod '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete po $(oc get po -n {{ odf_ns }}  --no-headers | grep noobaa-operator | awk '{print $1}') -n {{ odf_ns }}
+          register: noobaa_operator_restarted
+
+        - name: '{{ ansible_name_module }} | restart nooboo core pod '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete po $(oc get po -n {{ odf_ns }}  --no-headers | grep noobaa-core | awk '{print $1}') -n {{ odf_ns }}
+          register: noobaa_core_restarted
+
+        - name: '{{ ansible_name_module }} | restart nooboo enpoint pod '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete po $(oc get po -n {{ odf_ns }}  --no-headers | grep noobaa-endpoint | awk '{print $1}') -n {{ odf_ns }}
+          register: noobaa_endpoint_restarted
+
+        - name: '{{ ansible_name_module }} | restart nooboo db pod '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete po $(oc get po -n {{ odf_ns }}  --no-headers | grep noobaa-db | awk '{print $1}') -n {{ odf_ns }}
+          register: noobaa_db_restarted
+

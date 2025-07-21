@@ -61,3 +61,7 @@
     - item.type != '' 
     - "'pv-pool' in item.type"
   register: storage_cluster_resources_patched 
+
+- name: '{{ ansible_name_module }} | import_tasks | Import noobaa core scc fix additional tasks'
+  ansible.builtin.include_tasks: tasks/fix-noobaa-scc.yml
+
