@@ -1,0 +1,255 @@
+---
+- name: '{{ ansible_name_module }} | Add odf RGW  defaults '
+  ansible.builtin.include_tasks: tasks/set-odf-rgw-defaults.yml 
+
+- name: '{{ ansible_name_module }} | set_fact | set odf rgw backing store name if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_backingstore_name: 'rgw-default-backing-store'
+  when:
+    - not odf_rgw_backingstore_name is defined or odf_rgw_backingstore_name == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf rgw backing store s3 user secret name if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_s3_user_secret: 'rgw-user-secret'
+  when:
+    - not odf_rgw_s3_user_secret is defined or odf_rgw_s3_user_secret == ''
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Backing Store SC '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+     -- radosgw-admin user info --uid={{ odf_rgw_s3_user }} | jq .keys[]
+  ignore_errors: true
+  register: rgw_s3user_info_raw
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | print rgw_s3user_info_raw '
+  ansible.builtin.debug:
+    var: rgw_s3user_info_raw 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | print rgw_s3user_info_raw '
+  ansible.builtin.debug:
+    var: rgw_s3user_info_raw.stdout 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set rgw_s3user_info '
+  ansible.builtin.set_fact:
+    rgw_s3user_info: '{{ rgw_s3user_info_raw.stdout | from_json }}'
+  when:
+    - rgw_s3user_info_raw is defined
+    - rgw_s3user_info_raw.rc is defined
+    - rgw_s3user_info_raw.rc == 0 
+    - rgw_s3user_info_raw.stdout is defined
+    - rgw_s3user_info_raw.stdout != '' 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | print rgw_s3user_info '
+  ansible.builtin.debug:
+    var: rgw_s3user_info
+    verbosity: 2
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that the rgw_s3user_info exist' 
+  ansible.builtin.assert:
+    that:
+      - rgw_s3user_info is defined
+      - rgw_s3user_info.access_key is defined
+      - rgw_s3user_info.secret_key is defined
+    msg: "The RGW user needs to exist with an access and secret keys. "
+
+- name: '{{ ansible_name_module }} | set_fact | set rgw_s3user_access_key '
+  ansible.builtin.set_fact:
+    rgw_s3user_access_key: '{{ rgw_s3user_info.access_key }}'
+
+- name: '{{ ansible_name_module }} | set_fact | set rgw_s3user_secret_key '
+  ansible.builtin.set_fact:
+    rgw_s3user_secret_key: '{{ rgw_s3user_info.secret_key }}'
+
+- name: '{{ ansible_name_module }} | Get Existing RGW S3 User Access secret'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get secret {{ odf_rgw_s3_user_secret }} -n {{ odf_ns }}
+  ignore_errors: yes
+  register: rgw_s3_access_secret_exist
+
+- name: '{{ ansible_name_module }} | Delete Existing RGW S3 User Access  secret'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete secret {{ odf_rgw_s3_user_secret }} -n {{ odf_ns }}
+  ignore_errors: yes
+  when:
+    - rgw_s3_access_secret_exist.rc is defined
+    - rgw_s3_access_secret_exist.rc == 0
+    - rgw_s3_access_secret_exist.stdout is defined
+    - rgw_s3_access_secret_exist.stdout != ''
+    - odf_rgw_s3_user_secret in rgw_s3_access_secret_exist.stdout
+  register: rgw_s3_access_secret_delete
+
+- name: '{{ ansible_name_module }} | create RGW S3 User Access  secret'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create secret generic {{ odf_rgw_s3_user_secret }} \
+      --from-literal=AWS_ACCESS_KEY_ID={{ rgw_s3user_access_key }} \
+      --from-literal=AWS_SECRET_ACCESS_KEY={{ rgw_s3user_secret_key }} \
+       -n {{ odf_ns }}
+  register: rgw_s3_access_secret_created
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | internal registry default route '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get route {{ odf_rgw_obc_route }} -n {{ odf_ns }} -ojsonpath='{.spec.host}{"\n"}'
+  ignore_errors: true
+  register: rgw_s3_route_exist
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is an RGW S3 Route'
+  ansible.builtin.assert:
+    that:
+      - rgw_s3_route_exist is defined
+      - rgw_s3_route_exist.rc is defined
+      - rgw_s3_route_exist.rc == 0
+      - rgw_s3_route_exist.stdout is defined
+      - rgw_s3_route_exist.stdout != ''
+    msg: " There needs to be a RGW S3 route."
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_s3endpoint '
+  ansible.builtin.set_fact:
+    odf_rgw_s3endpoint: '{{ rgw_s3_route_exist.stdout }}'
+    odf_rgw_s3endpoint_url: 'http://{{ rgw_s3_route_exist.stdout }}'
+
+- name: '{{ ansible_name_module }} |  create S3 bucket if name was not passed in'
+  when:
+    - not odf_rgw_obc_bucket is defined or  odf_rgw_obc_bucket != '' 
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | set odf rgw backing store PVC SC name if not provided '
+      ansible.builtin.set_fact:
+        odf_rgw_obc_bucket: 'rgw-obc-bucket-container'
+
+    - name: '{{ ansible_name_module }} | set_fact | odf_rgw_obc_bucket_region'
+      ansible.builtin.set_fact:
+        odf_rgw_obc_bucket_region: "{{ mig_cntl_storagerepo_bucket_region | default('us-east-1', true) }}"
+      when:
+        - not odf_rgw_obc_bucket_region is defined or odf_rgw_obc_bucket_region == ''
+
+    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+      ansible.builtin.shell: >
+        which aws
+      ignore_errors: yes
+      register: aws_binary
+
+    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+      ansible.builtin.assert:
+        that:
+          - aws_binary is defined
+          - aws_binary.rc is defined
+          - aws_binary.rc == 0
+          - aws_binary.stdout is defined
+          - aws_binary.stdout != ''
+        msg: "The AWS CLI binary is required to download the MTC CR manifest to the S3 bucket "
+
+    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
+      ansible.builtin.set_fact:
+        aws_cli: '{{ aws_binary.stdout }}'
+
+         #radosgw-admin info --uid={{ odf_rgw_s3_user }} \
+         #radosgw-admin bucket list --uid={{ odf_rgw_s3_user }} \
+         #radosgw-admin bucket stats --bucket={{ odf_rgw_s3_user }}
+    - name: '{{ ansible_name_module }} | command:shell | copy MTC CR manifest directory to S3 bucket'
+      ansible.builtin.shell: >
+        {{ aws_cli }} --region {{ odf_rgw_obc_bucket_region }} \
+          s3 mb s3://{{ odf_rgw_obc_bucket }} \
+         --endpoint-url https://{{ odf_rgw_s3endpoint }} --no-verify-ssl 
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ rgw_s3user_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ rgw_s3user_secret_key }}"
+      register: bucket_created
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW Backing Store'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get backingstore -n {{ odf_ns }} {{ odf_rgw_backingstore_name }} -ojsonpath='{.status.phase}{"\n"}' 
+  ignore_errors: true
+  register: rgw_backingstore_exist
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is no bakingstore in ready state with the same name' 
+  ansible.builtin.assert:
+    that:
+      - rgw_backingstore_exist is defined
+      - rgw_backingstore_exist.rc is defined
+      - rgw_backingstore_exist.rc >= 0 
+      - (rgw_backingstore_exist.stdout is defined and rgw_backingstore_exist.stdout != '' and  "not 'Ready' in rgw_backingstore_exist.stdout") or (rgw_backingstore_exist.stderr is defined and rgw_backingstore_exist.stderr != '') 
+    msg: " There is a backing store with the name provided in ready state. You need to manually remove it or provide a different name. "
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Bucket Class'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete backingstore -n {{ odf_ns }} {{ odf_rgw_backingstore_name }} 
+  when:
+    - rgw_backingstore_exist is defined
+    - rgw_backingstore_exist.rc is defined
+    - rgw_backingstore_exist.rc == 0 
+    - rgw_backingstore_exist.stdout is defined
+    - rgw_backingstore_exist.stdout != '' 
+    - "not 'Ready' not in rgw_backingstore_exist.stdout"
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW Bucket Class'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get bucketclass -n {{ odf_ns }} {{ odf_rgw_backingstore_bc }} -ojsonpath='{.status.phase}{"\n"}' 
+  ignore_errors: true
+  register: rgw_bucketclass_exist
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is no bakingstore in ready state with the same name' 
+  ansible.builtin.assert:
+    that:
+      - rgw_bucketclass_exist is defined
+      - rgw_bucketclass_exist.rc is defined
+      - rgw_bucketclass_exist.rc >= 0 
+      - (rgw_bucketclass_exist.stdout is defined and rgw_bucketclass_exist.stdout != '' and "'Ready' in rgw_backingstore_exist.stdout") or (rgw_bucketclass_exist.stderr is defined and rgw_bucketclass_exist.stderr != '')
+    msg: " There is a bucket class with the name provided in ready state. You need to manually remove it or provide a different name."
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Bucket Class'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete bucketclass -n {{ odf_ns }} {{ odf_rgw_backingstore_bc }} 
+  when:
+    - rgw_bucketclass_exist is defined
+    - rgw_bucketclass_exist.rc is defined
+    - rgw_bucketclass_exist.rc == 0 
+    - rgw_bucketclass_exist.stdout is defined
+    - rgw_bucketclass_exist.stdout != '' 
+    - "'Ready' not in rgw_bucketclass_exist.stdout"
+
+- name: '{{ ansible_name_module }} | template | RGW  Backingstore CR'
+  ansible.builtin.template:
+    src: "templates/odf-rgw-obc-backingstore.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_rgw_backingstore_bc }}-rgw-obc-backingstore.yaml"
+    force: yes
+  register: rgw_bs_cr_copied
+
+- name: '{{ ansible_name_module }} | template | RGW Backingstore Bucket Class CR'
+  ansible.builtin.template:
+    src: "templates/odf-rgw-obc-bucket-class.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_rgw_backingstore_name }}-rgw-obc-bucket-class.yaml"
+    force: yes
+  register: rgw_bc_cr_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create RGW Backingstore '
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ rgw_bs_cr_copied.dest }}
+  when:
+    - rgw_bs_cr_copied is defined
+    - rgw_bs_cr_copied.dest is defined
+    - rgw_bs_cr_copied.state is defined
+    - "'file' in rgw_bs_cr_copied.state"
+  register: rgw_bs_cr_config_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 300
+  delegate_to: localhost
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create RWG Backingstore Bucket Class '
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ rgw_bc_cr_copied.dest }}
+  when:
+    - rgw_bc_cr_copied is defined
+    - rgw_bc_cr_copied.dest is defined
+    - rgw_bc_cr_copied.state is defined
+    - "'file' in rgw_bc_cr_copied.state"
+  register: rgw_bc_cr_config_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 60
+  delegate_to: localhost
+

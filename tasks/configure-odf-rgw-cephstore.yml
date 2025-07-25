@@ -1,0 +1,178 @@
+---
+- name: '{{ ansible_name_module }} | Add odf rgw defaults '
+  ansible.builtin.include_tasks: tasks/set-odf-rgw-defaults.yml 
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Bucket Class'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get CephObjectStore -n {{ odf_ns }} {{ odf_rgw_ceph_object_store_name }}  
+  ignore_errors: true
+  register: obc_rgw_ceph_object_store_exist
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is no RGW Ceph Object store with the same name' 
+  ansible.builtin.assert:
+    that:
+      - obc_rgw_ceph_object_store_exist is defined
+      - obc_rgw_ceph_object_store_exist.rc is defined
+      - obc_rgw_ceph_object_store_exist.rc >= 0 
+      - obc_rgw_ceph_object_store_exist.stdout is defined 
+      - obc_rgw_ceph_object_store_exist.stdout == '' 
+      - obc_rgw_ceph_object_store_exist.stderr is defined 
+      - obc_rgw_ceph_object_store_exist.stderr != '' 
+      - "'NotFound' in obc_rgw_ceph_object_store_exist.stderr"
+    msg: " There is a ceph object store with the name provided in ready state. You need to manually remove it or provide a different name."
+
+- name: '{{ ansible_name_module }} | template | RGW SC'
+  ansible.builtin.template:
+    src: "templates/odf-rgw-ceph-object-store.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_rgw_ceph_object_store_name }}-odf-rgw-ceph-object-store.yaml"
+    force: yes
+  register: rgw_object_store_cr_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create RGW Object  Store'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ rgw_object_store_cr_copied.dest }}
+  when:
+    - rgw_object_store_cr_copied is defined
+    - rgw_object_store_cr_copied.dest is defined
+    - rgw_object_store_cr_copied.state is defined
+    - "'file' in rgw_object_store_cr_copied.state"
+  register: rgw_object_store_cr_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 10
+  delegate_to: localhost
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW S3 Route'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get route -n {{ odf_ns }} {{ odf_rgw_obc_route }}  
+  ignore_errors: true
+  register: obc_rgw_route_exist
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is no RGW S3 Route with the same name' 
+  ansible.builtin.assert:
+    that:
+      - obc_rgw_route_exist is defined
+      - obc_rgw_route_exist.rc is defined
+      - obc_rgw_route_exist.rc >= 0 
+      - obc_rgw_route_exist.stdout is defined 
+      - obc_rgw_route_exist.stdout == '' 
+      - obc_rgw_route_exist.stderr is defined 
+      - obc_rgw_route_exist.stderr != '' 
+      - "'NotFound' in obc_rgw_route_exist.stderr"
+    msg: " There is a RGW S3 route with the name provided in ready state. You need to manually remove it or provide a different name."
+
+- name: '{{ ansible_name_module }} | template | RGW SC'
+  ansible.builtin.template:
+    src: "templates/odf-rgw-route.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_rgw_ceph_object_store_name }}-odf-rgw-route.yaml"
+    force: yes
+  register: rgw_sc_cr_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create RGW S3 Route'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ rgw_sc_cr_copied.dest }}
+  when:
+    - rgw_sc_cr_copied is defined
+    - rgw_sc_cr_copied.dest is defined
+    - rgw_sc_cr_copied.state is defined
+    - "'file' in rgw_sc_cr_copied.state"
+  register: rgw_sc_cr_applied
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Storage Class'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get storageclass -n {{ odf_ns }} {{ odf_rgw_obc_sc }}  
+  ignore_errors: true
+  register: obc_rgw_sc_exist
+
+- name:  '{{ ansible_name_module }} | ansible.builtin.assert | assert that there is no SC with the same name' 
+  ansible.builtin.assert:
+    that:
+      - obc_rgw_sc_exist is defined
+      - obc_rgw_sc_exist.rc is defined
+      - obc_rgw_sc_exist.rc >= 0 
+      - obc_rgw_sc_exist.stdout is defined 
+      - obc_rgw_sc_exist.stdout == '' 
+      - obc_rgw_sc_exist.stderr is defined 
+      - obc_rgw_sc_exist.stderr != '' 
+      - "'NotFound' in obc_rgw_sc_exist.stderr"
+    msg: " There is a storage class with the name provided in ready state. You need to manually remove it or provide a different name."
+
+- name: '{{ ansible_name_module }} | template | RGW SC'
+  ansible.builtin.template:
+    src: "templates/odf-rgw-obc-sc.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ odf_rgw_ceph_object_store_name }}-odf-rgw-obc-sc.yaml"
+    force: yes
+  register: rgw_sc_cr_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create RGW OBC SC'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ rgw_sc_cr_copied.dest }}
+  when:
+    - rgw_sc_cr_copied is defined
+    - rgw_sc_cr_copied.dest is defined
+    - rgw_sc_cr_copied.state is defined
+    - "'file' in rgw_sc_cr_copied.state"
+  register: rgw_sc_cr_applied
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW OBC SC '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get sc {{ odf_rgw_obc_sc }} -o name
+  ignore_errors: true
+  register: rgw_obc_sc_exist
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW PO '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get po -n {{ odf_ns }} | grep rgw 
+  ignore_errors: true
+  register: rgw_po_exist
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW SVC '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get svc -n {{ odf_ns }} | grep rgw 
+  ignore_errors: true
+  register: rgw_svc_exist
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve RGW route '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get route -n {{ odf_ns }} | grep rgw 
+  ignore_errors: true
+  register: rgw_route_exist
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW admin user '
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch ocsinitialization ocsinit -n {{ odf_ns }} --type merge --patch '{"spec": {"enableCephTools": true }}' 
+  register: ocsinit_patched 
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 30
+  delegate_to: localhost
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW admin user '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+      -- radosgw-admin user create --uid={{ odf_rgw_admin_user }} --display-name='{{ odf_rgw_admin_user_display }}' --system
+  ignore_errors: true
+  register: rgw_adminuser_created
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW s3 user '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+      -- radosgw-admin user create --uid={{ odf_rgw_s3_user }} --display-name='{{ odf_rgw_s3_user_display }}'
+  ignore_errors: true
+  register: rgw_as3user_created
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW dashboard user '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+      -- radosgw-admin user create --uid={{ odf_rgw_dashboard_user }} --display-name='{{ odf_rgw_dashboard_user_display }}' --system
+  ignore_errors: true
+  when:
+    - create_rgw_dashboard_user is defined
+    - create_rgw_dashboard_user | bool 
+  register: rgw_dashuser_created
+

@@ -1,0 +1,111 @@
+- name: ' Create OBC S3 bucket on ODF | create-obc-s3-bucket-on-odf.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "create-obc-s3-bucket-on-odf"
+    ansible_name_module: "Configure ODF Cluster | {{ module }}"
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the S3 Bucket Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - obc_bucket_cluster_console_url is defined
+              - obc_bucket_cluster_console_url != ''
+            msg: "The S3 Bucket cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the S3 Bucket Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - obc_bucket_cluster_token is defined
+              - obc_bucket_cluster_token != ''
+            msg: "The S3 Bucket cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            obc_bucket_cluster_console_port: '6443'
+          when:
+            - not obc_bucket_cluster_console_port is defined or obc_bucket_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | assert | the S3 bucket namespace is defined'
+          ansible.builtin.assert:
+            that:
+              - obc_bucket_namespace is defined
+              - obc_bucket_namespace != ''
+            msg: "The S3 bucket namespace is required to create the bucket"
+
+        - name: '{{ ansible_name_module }} | assert | the S3 bucket namespace is defined'
+          ansible.builtin.assert:
+            that:
+              - obc_bucket_name is defined
+              - obc_bucket_name != ''
+            msg: "The S3 bucket name is required to create the bucket"
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Provision RGW bucket without BackingStore '
+      when:
+        - provision_rgw_obc is defined
+        - provision_rgw_obc | bool
+      block:
+        - name: '{{ ansible_name_module }} | import_tasks | Import RGW OBC create tasks'
+          ansible.builtin.include_tasks: tasks/create-rgw-obc-on-odf-cluster.yml
+          vars:
+            rgw_bucket_namespace: "{{ obc_bucket_namespace }}"
+            rgw_bucket_name: "{{ obc_bucket_name }}"
+
+    - name: '{{ ansible_name_module }} | Provision noobaa or RGW bucket with BackingStore '
+      when:
+        - not provision_rgw_obc is defined or not provision_rgw_obc | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | obc_bucket_class '
+          ansible.builtin.set_fact:
+            obc_bucket_class: 'noobaa-default-bucket-class'
+          when:
+            - not obc_bucket_class is defined or obc_bucket_class == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | obc_storage_class'
+          ansible.builtin.set_fact:
+            obc_storage_class: 'openshift-storage.noobaa.io'
+          when:
+            - not obc_storage_class is defined or obc_storage_class == ''
+
+        - name: '{{ ansible_name_module }} | import_tasks | Import OBC create tasks'
+          ansible.builtin.include_tasks: tasks/create-noobaa-obc-on-odf-cluster.yml
+

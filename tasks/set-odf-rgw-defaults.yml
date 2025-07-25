@@ -1,0 +1,132 @@
+---
+- name: '{{ ansible_name_module }} | Set cluster name if not provided'
+  #when:
+  #  - not cluster_name is defined or cluster_name == ''
+  block:
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get infrastructure cluster -o jsonpath='{.status.infrastructureName}{"\n"}'
+      register: cluster_infra_name
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+      ansible.builtin.set_fact:
+        cluster_name: "{{ cluster_infra_name.stdout }}"
+      when:
+        - cluster_infra_name.stdout is defined
+        - cluster_infra_name.stdout != ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_ns '
+  ansible.builtin.set_fact:
+    odf_ns: "openshift-storage"
+  when:
+    - not odf_ns is defined or odf_ns == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf RGW Ceph Object store name if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_name: 'ocs-storagecluster-cephobjectstore'
+  when:
+    - not odf_rgw_ceph_object_store_name is defined or odf_rgw_ceph_object_store_name == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf  RGW Ceph Object store size if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_size: '3'
+  when:
+    - not odf_rgw_ceph_object_store_size is defined or odf_rgw_ceph_object_store_size == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf  RGW Ceph Object store instance count if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_instance_count: '1'
+  when:
+    - not odf_rgw_ceph_object_store_instance_count is defined or odf_rgw_ceph_object_store_instance_count == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf  RGW Ceph Object store Replica Count if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_replication_count: '3'
+  when:
+    - not odf_rgw_ceph_object_store_replication_count is defined or odf_rgw_ceph_object_store_replication_count == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf  RGW Ceph Object store OBC SC name if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_obc_sc: 'ocs-storagecluster-ceph-rgw'
+  when:
+    - not odf_rgw_obc_sc is defined or odf_rgw_obc_sc == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf  RGW Ceph Bucket Class name if not provided '
+  ansible.builtin.set_fact:
+    odf_rgw_backingstore_bc: 'rgw-bucket-class'
+  when:
+    - not odf_rgw_backingstore_bc is defined or odf_rgw_backingstore_bc == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_ceph_object_store_mem_limit '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_mem_limit: "4Gi"
+  when:
+    - not odf_rgw_ceph_object_store_mem_limit is defined or odf_rgw_ceph_object_store_mem_limit == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_ceph_object_store_mem_request '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_mem_request: "4Gi"
+  when:
+    - not odf_rgw_ceph_object_store_mem_request is defined or odf_rgw_ceph_object_store_mem_request == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_ceph_object_store_cpu_limit '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_cpu_limit: "2"
+  when:
+    - not odf_rgw_ceph_object_store_cpu_limit is defined or odf_rgw_ceph_object_store_cpu_limit == '' or odf_rgw_ceph_object_store_cpu_limit | int < 2
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_ceph_object_store_cpu_request '
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_cpu_request: "1"
+  when:
+    - not odf_rgw_ceph_object_store_cpu_request is defined or odf_rgw_ceph_object_store_cpu_request == '' or odf_rgw_ceph_object_store_cpu_request | int < 1
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_ceph_object_store_use_cert'
+  ansible.builtin.set_fact:
+    odf_rgw_ceph_object_store_use_cert: "false"
+  when:
+    - not odf_rgw_ceph_object_store_use_cert is defined or odf_rgw_ceph_object_store_use_cert == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_obc_route'
+  ansible.builtin.set_fact:
+    odf_rgw_obc_route: "s3-rgw"
+  when:
+    - not odf_rgw_obc_route is defined or odf_rgw_obc_route == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_admin_user'
+  ansible.builtin.set_fact:
+    odf_rgw_admin_user: "{{ cluster_name }}-rgw-admin"
+  when:
+    - not odf_rgw_admin_user is defined or odf_rgw_admin_user == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_admin_user_display'
+  ansible.builtin.set_fact:
+    odf_rgw_admin_user_display: "{{ cluster_name }} RGW Admin User"
+  when:
+    - not odf_rgw_admin_user_display is defined or odf_rgw_admin_user_display == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_s3_user'
+  ansible.builtin.set_fact:
+    odf_rgw_s3_user: "{{ cluster_name }}-rgw-user"
+  when:
+    - not odf_rgw_s3_user is defined or odf_rgw_s3_user == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_s3_user_display'
+  ansible.builtin.set_fact:
+    odf_rgw_s3_user_display: "{{ cluster_name }} RGW S3 User"
+  when:
+    - not odf_rgw_s3_user_display is defined or odf_rgw_s3_user_display == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_dashboard_user'
+  ansible.builtin.set_fact:
+    odf_rgw_dashboard_user: "{{ cluster_name }}-rgw-dashboard"
+  when:
+    - not odf_rgw_dashboard_user is defined or odf_rgw_dashboard_user == ''
+
+- name: '{{ ansible_name_module }} | set_fact | set odf_rgw_dashboard_user_display'
+  ansible.builtin.set_fact:
+    odf_rgw_dashboard_user_display: "{{ cluster_name }} RGW Dashboard User"
+  when:
+    - not odf_rgw_dashboard_user_display is defined or odf_rgw_dashboard_user_display == ''
+
+

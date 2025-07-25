@@ -1,0 +1,18 @@
+apiVersion: noobaa.io/v1alpha1
+kind: BackingStore
+metadata:
+  finalizers:
+  - noobaa.io/finalizer
+  labels:
+    app: noobaa
+  name: {{ odf_rgw_backingstore_name }}
+  namespace: openshift-storage
+spec:
+  s3Compatible:
+    endpoint: {{ odf_rgw_s3endpoint_url }}
+    secret:
+      name: {{ odf_rgw_s3_user_secret }}
+      namespace: openshift-storage
+    signatureVersion: v4
+    targetBucket: {{ odf_rgw_obc_bucket }}
+  type: s3-compatible 

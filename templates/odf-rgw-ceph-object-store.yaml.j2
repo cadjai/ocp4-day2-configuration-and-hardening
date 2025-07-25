@@ -1,0 +1,65 @@
+---
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStore
+metadata:
+  name: {{ odf_rgw_ceph_object_store_name | default('ocs-storagecluster-cephobjectstore', true) }}
+  namespace: openshift-storage
+spec:
+  dataPool:
+    crushRoot: ""
+    deviceClass: ""
+    erasureCoded:
+      algorithm: ""
+      codingChunks: 0
+      dataChunks: 0
+    failureDomain: host
+    replicated:
+      size: {{ odf_rgw_ceph_object_store_size | default(3, true) }}
+  gateway:
+    allNodes: false
+    instances: {{ odf_rgw_ceph_object_store_instance_count | default(1, true) }}
+    placement:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: cluster.ocs.openshift.io/openshift-storage
+              operator: Exists
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - rook-ceph-rgw
+            topologyKey: kubernetes.io/hostname
+          weight: 100
+      tolerations:
+      - effect: NoSchedule
+        key: node.ocs.openshift.io/storage
+        operator: Equal
+        value: "true"
+    port: 80
+    resources:
+      limits:
+        cpu: "{{ odf_rgw_ceph_object_store_cpu_limit | default('2', true) }}"
+        memory: {{ odf_rgw_ceph_object_store_mem_limit | default("4Gi", true) }}
+      requests:
+        cpu: "{{ odf_rgw_ceph_object_store_cpu_request | default('1', true) }}"
+        memory: {{ odf_rgw_ceph_object_store_mem_request | default("4Gi", true) }}
+    securePort: 0
+{% if odf_rgw_ceph_object_store_use_cert is defined and odf_rgw_ceph_object_store_use_cert | bool and odf_rgw_ceph_object_store_cert_secret is defined and odf_rgw_ceph_object_store_cert_secret != '' %}
+    sslCertificateRef: "{{ odf_rgw_ceph_object_store_cert_secret }}"
+{% endif %}
+  metadataPool:
+    crushRoot: ""
+    deviceClass: ""
+    erasureCoded:
+      algorithm: ""
+      codingChunks: 0
+      dataChunks: 0
+    failureDomain: host
+    replicated:
+      size: {{ odf_rgw_ceph_object_store_size | default(3, true) }}

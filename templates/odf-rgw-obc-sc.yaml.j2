@@ -1,0 +1,15 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: {{ odf_rgw_obc_sc | default('ocs-storagecluster-ceph-rgw', true) }}
+  annotations:
+    description: Provides Object Bucket Claims (OBCs) using the RGW
+provisioner: openshift-storage.ceph.rook.io/bucket
+parameters:
+  objectStoreName: {{ odf_rgw_ceph_object_store_name | default('ocs-storagecluster-cephobjectstore', true) }}
+  objectStoreNamespace: openshift-storage
+  region: {{ odf_rgw_ceph_object_store_region | default('us-east-1', true) }}
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate

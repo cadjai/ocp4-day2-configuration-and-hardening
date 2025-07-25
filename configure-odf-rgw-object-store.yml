@@ -1,4 +1,4 @@
-- name: ' Configure ODF Cluster PVPool Backingstore | configure-odf-pvpool-backingstore.yml'
+- name: ' Configure RGW Object Store | configure-odf-rgw-object-store.yml'
   hosts: localhost
   vars:
     ansible_python_interpreter: /usr/bin/python3
@@ -6,7 +6,7 @@
     - 'vars/vault.yml'
     - 'vars/global.yml'
   vars:
-    module: "configure-odf-pvpool-backingstore"
+    module: "configure-rgw-objectstore-on-odf"
     ansible_name_module: "Configure ODF Cluster | {{ module }}"
   pre_tasks:
     - name: Install required pip library
@@ -39,5 +39,6 @@
       register: login_out
 
   tasks:
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF OBC PV backingstore config tasks'
-      ansible.builtin.include_tasks: tasks/configure-odf-noobaa-pvbackingstore.yml
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF RGW Objectstore config tasks'
+      ansible.builtin.include_tasks:  tasks/configure-odf-rgw-cephstore.yml
+

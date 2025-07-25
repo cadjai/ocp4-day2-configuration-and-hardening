@@ -1,0 +1,24 @@
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ odf_rgw_obc_route | default('s3-rgw', true) }}
+  namespace: openshift-storage
+  labels:
+    app: rook-ceph-rgw
+    ceph_daemon_id: {{ odf_rgw_ceph_object_store_name | default('ocs-storagecluster-cephobjectstore', true) }}
+    ceph_daemon_type: rgw
+    rgw: {{ odf_rgw_ceph_object_store_name | default('ocs-storagecluster-cephobjectstore', true) }}
+    rook_cluster: openshift-storage
+    rook_object_store: {{ odf_rgw_ceph_object_store_name | default('ocs-storagecluster-cephobjectstore', true) }}
+spec:
+  to:
+    kind: Service
+    name: rook-ceph-rgw-{{ odf_rgw_ceph_object_store_name | default('ocs-storagecluster-cephobjectstore', true) }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow
+  wildcardPolicy: None

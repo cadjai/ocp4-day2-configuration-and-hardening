@@ -1,0 +1,152 @@
+- name: ' Configure Trident Storage  | configure-trident-for-persistence.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Configure Trident for persistence"
+    ansible_name_module: " Post Cluster Installation | Configure Trident Driver | {{ module }}"
+  pre_tasks:
+    #- name: Install required pip library
+    #  pip:
+    #    name: openshift
+    #    state: present
+
+    #- name: Ensure Proper Python dependency is installed for Openshift
+    #  python_requirements_facts:
+    #    dependencies:
+    #      - openshift
+    #      - requests
+ 
+    #- name: Authenticate with the API
+    #  command: >
+    #    {{ openshift_cli }} login \
+    #      -u {{ ocp_cluster_user }} \
+    #      -p {{ ocp_cluster_user_password }} \
+    #      --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+    #  register: login_out
+
+
+  tasks:
+    ##################### Create Trident Backend Config ###################################
+    - name: '{{ ansible_name_module }} | Create Trident Storage backend if necessary'
+      when:
+        - create_trident_backend is defined
+        - create_trident_backend | bool
+      block:
+        - name: '{{ ansible_name_module }} | Use default backend config'
+          when:
+            - not trident_backend_files is defined or trident_backend_files | length == 0
+          block:
+            - ansible.builtin.assert:
+                that:
+                  - tbc_backend_username is defined 
+                  - tbc_backend_username != ''
+                msg: " the Trident Backend Config Volume username for is required to be a valid non empty value"
+            - ansible.builtin.assert:
+                that:
+                  - tbc_backend_password is defined 
+                  - tbc_backend_password != ''
+                msg: " the Trident Backend Config Volume password for is required to be a valid non empty value"
+            - ansible.builtin.assert:
+                that:
+                  - tbc_backend_mgmt_interface_ip is defined 
+                  - tbc_backend_mgmt_interface_ip != ''
+                msg: " the Trident Backend Management Interface IP is required to be a valid non empty value"
+            - ansible.builtin.assert:
+                that:
+                  - tbc_backend_data_interface_ip is defined 
+                  - tbc_backend_data_interface_ip != ''
+                msg: " the Trident Backend Data Interface IP is required to be a valid non empty value"
+
+            - name: '{{ ansible_name_module }} | set_fact | trident backend tbc default config file fact'
+              ansible.builtin.set_fact:
+                trident_tbc_file: "{{ staging_dir | default('/tmp/trident', true) }}/trident-backend-config.yaml"
+
+            - name: '{{ ansible_name_module }} | template | Copy backend config template to staging location'
+              ansible.builtin.template:
+                src: "templates/trident-backend-config.yaml.j2"
+                dest: "{{ trident_tbc_file }}"
+                force: yes
+
+            - name: '{{ ansible_name_module }} | set_fact | trident backend config file fact'
+              ansible.builtin.set_fact:
+                trident_backend_files: "{{ trident_backend_files | default([],true) + [trident_tbc_file] }}"
+
+        - name: '{{ ansible_name_module }} | stat | Check if TBC file exist'
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: false
+          loop: "{{ trident_backend_files }}"
+          register: tbc_files_exist
+
+        - name: '{{ ansible_name_module }} | debug | Print TBC Backend files exist Check output'
+          debug:
+            var: item
+            verbosity: 2
+          loop: "{{ tbc_files_exist.results }}"
+
+        #- name: '{{ ansible_name_module }} | Create Trident Backend Config'
+        #  ansible.builtin.command: >
+        #    {{ openshift_cli }} create -f '{{ item.stat.exists.path }}'
+        #  loop: "{{ tbc_files_exist.results }}"
+        #  when:
+        #    - item.stat is defined
+        #    - item.stat.exists is defined
+        #    - item.stat.exists | bool 
+        #    - item.stat.exists.path is defined
+        #  register: trident_tbc_created 
+
+
+    ##################### Create Trident Storage Classes ###################################
+    - name: '{{ ansible_name_module }} | Create Trident Storage classes if necessary'
+      when:
+        - create_trident_sc is defined
+        - create_trident_sc | bool
+      block:
+        - name: '{{ ansible_name_module }} | Use default Trident Storage Class'
+          when:
+            - not trident_sc_files is defined or trident_sc_files | length == 0
+          block:
+            - name: '{{ ansible_name_module }} | set_fact | trident backend tbc default config file fact'
+              ansible.builtin.set_fact:
+                trident_sc_file: "{{ staging_dir | default('/tmp/trident', true) }}/trident-storageclass.yaml"
+
+            - name: '{{ ansible_name_module }} | template | Copy Trident Storage template to staging location'
+              ansible.builtin.template:
+                src: "templates/trident-storageclass.yaml.j2"
+                dest: "{{ trident_sc_file }}"
+                force: yes
+              vars:
+                make_tbc_sc_default: 'true'
+
+            - name: '{{ ansible_name_module }} | set_fact | trident storage class files fact'
+              ansible.builtin.set_fact:
+                trident_backend_sc_files: "{{ trident_backend_files | default([],true) + [trident_sc_file] }}"
+
+        - name: '{{ ansible_name_module }} | stat | Check if TBC file exist'
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: false
+          loop: "{{ trident_backend_sc_files }}"
+          register: tbc_sc_files_exist
+
+        - name: '{{ ansible_name_module }} | debug | Print SC files exist Check output'
+          debug:
+            var: item
+            verbosity: 2
+          loop: "{{ tbc_sc_files_exist.results }}"
+
+        #- name: '{{ ansible_name_module }} | Create Trident Storage Classes'
+        #  ansible.builtin.command: >
+        #    {{ openshift_cli }} create -f '{{ item.stat.exists.path }}'
+        #  loop: "{{ tbc_sc_files_exist.results }}"
+        #  when:
+        #    - item.stat is defined
+        #    - item.stat.exists is defined
+        #    - item.stat.exists | bool 
+        #    - item.stat.exists.path is defined
+        #  register: trident_sc_created 
+

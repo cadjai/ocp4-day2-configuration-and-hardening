@@ -1,0 +1,14 @@
+apiVersion: noobaa.io/v1alpha1
+kind: BucketClass
+metadata:
+  finalizers:
+  - noobaa.io/finalizer
+  labels:
+    app: rook-ceph-rgw 
+  name: {{ odf_rgw_backingstore_bc }}
+  namespace: openshift-storage
+spec:
+  placementPolicy:
+    tiers:
+    - backingStores:
+      - {{ odf_rgw_backingstore_name }}
