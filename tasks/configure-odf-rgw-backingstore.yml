@@ -27,21 +27,51 @@
     var: rgw_s3user_info_raw 
     verbosity: 2
 
-- name: '{{ ansible_name_module }} | ansible.builtin.debug | print rgw_s3user_info_raw '
-  ansible.builtin.debug:
-    var: rgw_s3user_info_raw.stdout 
-    verbosity: 2
-
-- name: '{{ ansible_name_module }} | set_fact | set rgw_s3user_info '
-  ansible.builtin.set_fact:
-    rgw_s3user_info: '{{ rgw_s3user_info_raw.stdout | from_json }}'
+- name: '{{ ansible_name_module }} | create RGW users if the user could not be retrieved above '
   when:
-    - rgw_s3user_info_raw is defined
-    - rgw_s3user_info_raw.rc is defined
-    - rgw_s3user_info_raw.rc == 0 
-    - rgw_s3user_info_raw.stdout is defined
-    - rgw_s3user_info_raw.stdout != '' 
+    - (rgw_s3user_info_raw.stdout is defined and rgw_s3user_info_raw.stdout == "") or (rgw_s3user_info_raw.stderr is defined and rgw_s3user_info_raw.stderr != "" and " 'could not fetch user info' in rgw_s3user_info_raw.stderr")
+  block:
+    - name: '{{ ansible_name_module }} | Add odf RGW default users '
+      ansible.builtin.include_tasks: tasks/add-users-to-odf-rgw-cephstore.yml 
 
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve OBC Backing Store SC '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} exec -n {{ odf_ns }}  \
+          $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+         -- radosgw-admin user info --uid={{ odf_rgw_s3_user }} | jq .keys[]
+      ignore_errors: true
+      register: rgw_s3user_info_new
+
+    - name: '{{ ansible_name_module }} | set_fact | set rgw_s3user_info '
+      ansible.builtin.set_fact:
+        rgw_s3user_info: '{{ rgw_s3user_info_new.stdout | from_json }}'
+      when:
+        - rgw_s3user_info_new is defined
+        - rgw_s3user_info_new.rc is defined
+        - rgw_s3user_info_new.rc == 0 
+        - rgw_s3user_info_new.stdout is defined
+        - rgw_s3user_info_new.stdout != '' 
+
+- name: '{{ ansible_name_module }} | set RGW userinfo if the retrieved above '
+  when:
+    - rgw_s3user_info_raw.stdout is defined 
+    - rgw_s3user_info_raw.stdout != "" 
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | print rgw_s3user_info_raw '
+      ansible.builtin.debug:
+        var: rgw_s3user_info_raw.stdout 
+        verbosity: 2
+    
+    - name: '{{ ansible_name_module }} | set_fact | set rgw_s3user_info '
+      ansible.builtin.set_fact:
+        rgw_s3user_info: '{{ rgw_s3user_info_raw.stdout | from_json }}'
+      when:
+        - rgw_s3user_info_raw is defined
+        - rgw_s3user_info_raw.rc is defined
+        - rgw_s3user_info_raw.rc == 0 
+        - rgw_s3user_info_raw.stdout is defined
+        - rgw_s3user_info_raw.stdout != '' 
+    
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | print rgw_s3user_info '
   ansible.builtin.debug:
     var: rgw_s3user_info

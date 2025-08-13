@@ -31,9 +31,11 @@ spec:
   multiCloudgateway:
     dbStorageClassName: {{ odf_default_provider_rwo_sc | d('default-rwo', true) }}
     reconciliationStrategy: standalone
+{% if apply_mcg_resource_optimization is defined and apply_mcg_resource_optimization | bool %}
     endpoints:
       maxCount: {{ noobaa_mcg_max_count }}
       minCount: {{ noobaa_mcg_min_count }}
+{% endif %}
 {% if disable_lb_svc is defined and disable_lb_svc | bool %}
     disableLoadBalancerService: {{ disable_lb_svc }}
 {% endif %}
@@ -44,6 +46,7 @@ spec:
     storageClassName: {{ odf_nfs_storage_class | d('default-nfs', true) }}
 {% endif %}
   nodeTopologies: {}
+{% if apply_mcg_resource_optimization is defined and apply_mcg_resource_optimization | bool %}
   resources:
     noobaa-db:
       limits:
@@ -66,6 +69,7 @@ spec:
       requests:
         cpu: "{{ noobaa_core_cpu_request }}"
         memory: "{{ noobaa_core_mem_request }}"
+{% endif %}
   storageDeviceSets:
   - config: {}
     count: 1 

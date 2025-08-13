@@ -1,0 +1,28 @@
+---
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW admin user '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+      -- radosgw-admin user create --uid={{ odf_rgw_admin_user }} --display-name='{{ odf_rgw_admin_user_display }}' --system
+  ignore_errors: true
+  register: rgw_adminuser_created
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW s3 user '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+      -- radosgw-admin user create --uid={{ odf_rgw_s3_user }} --display-name='{{ odf_rgw_s3_user_display }}'
+  ignore_errors: true
+  register: rgw_as3user_created
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} exec | create RGW dashboard user '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} exec -n {{ odf_ns }}  \
+      $({{ openshift_cli }} get po -n {{ odf_ns }} -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}') \
+      -- radosgw-admin user create --uid={{ odf_rgw_dashboard_user }} --display-name='{{ odf_rgw_dashboard_user_display }}' --system
+  ignore_errors: true
+  when:
+    - create_rgw_dashboard_user is defined
+    - create_rgw_dashboard_user | bool 
+  register: rgw_dashuser_created
+

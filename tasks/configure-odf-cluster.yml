@@ -1,4 +1,10 @@
 ---
+- name: '{{ ansible_name_module }} | Add odf mcg resources defaults '
+  ansible.builtin.include_tasks: tasks/set-odf-mcg-resource-defaults.yml
+  when:
+    - apply_mcg_resource_optimization is defined
+    - apply_mcg_resource_optimization | bool 
+
 - name: '{{ ansible_name_module }} | Apply ODF Clustet CR if appropriate'
   when:
     - apply_odf_cluster is defined
@@ -28,6 +34,22 @@
         - odf_cluster_cr_template is defined
         - odf_cluster_cr_template != ''
       register: op_cr_rendered
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | Get OCS Cluster CRD manifest'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get  crd -A | grep storageclusters 
+      register: ocs_cluster_crd_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure the OCS Cluster CRD exists'
+      ansible.builtin.assert:
+        that:
+          - ocs_cluster_crd_exists is defined
+          - ocs_cluster_crd_exists.rc is defined
+          - ocs_cluster_crd_exists.rc == 0
+          - ocs_cluster_crd_exists.stdout is defined
+          - ocs_cluster_crd_exists.stdout != ''
+          - "'storagecluster' in ocs_cluster_crd_exists.stdout"
+        msg: " the OCS Cluster CRD must exist in the cluster before creating the OCS cluster"
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | ODF Cluster CR'
       ansible.builtin.command: >

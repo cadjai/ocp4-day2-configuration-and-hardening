@@ -66,6 +66,21 @@
             dest: "{{ file_decryption_staging_dir }}/api-server.key"
             force: yes
 
+        - name: '{{ ansible_name_module }} | decrypt original kuebconfig file to use if updating kubeconfig'
+          when:
+            - update_kubeconfig is defined
+            - update_kubeconfig | bool
+          block:
+            - name: '{{ ansible_name_module }} | decrypt file | original kuebconfig'
+              ansible.builtin.copy:
+                content: "{{ kubeconfig_b64 | ansible.builtin.b64decode }}"
+                dest: "{{ file_decryption_staging_dir }}/kubeconfig"
+                force: yes
+
+            - name: '{{ ansible_name_module }} | set_fact | kubeconfig_file '
+              ansible.builtin.set_fact:
+                kubeconfig_file: "{{ file_decryption_staging_dir }}/kubeconfig"
+
         - name: '{{ ansible_name_module }} | set_fact | api_cert_key_file '
           ansible.builtin.set_fact:
             api_cert_key_file: "{{ file_decryption_staging_dir }}/api-server.key"
@@ -112,6 +127,24 @@
           register: api_cert_key_file_exist
 
   tasks:
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get infrastructure cluster -o jsonpath='{.status.infrastructureName}{"\n"}'
+      register: cluster_infra_name
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+      ansible.builtin.set_fact:
+        api_cert_secret_name: "api-secret"
+      when:
+        - not is api_cert_secret_name is defined or api_cert_secret_name == ""
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+      ansible.builtin.set_fact:
+        cluster_name: "{{ cluster_infra_name.stdout }}"
+      when:
+        - cluster_infra_name.stdout is defined
+        - cluster_infra_name.stdout != ''
+
     - name: '{{ ansible_name_module }} | Retrieve a fresh kubeconfig that can be used during the update'
       when:
         - update_kubeconfig is defined
@@ -154,18 +187,6 @@
             - not cluster_api_fqdn is defined or cluster_api_fqdn == ''
           register: cluster_base_domain_out
 
-        - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
-          ansible.builtin.command: >
-            {{ openshift_cli }} get infrastructure cluster -o jsonpath='{.status.infrastructureName}{"\n"}'
-          register: cluster_infra_name
-
-        - name: '{{ ansible_name_module }} | set_fact | cluster_name '
-          ansible.builtin.set_fact:
-            cluster_name: "{{ cluster_infra_name.stdout }}"
-          when:
-            - cluster_infra_name.stdout is defined
-            - cluster_infra_name.stdout != ''
-
         - name: '{{ ansible_name_module }} | set_fact | cluster_api_fqdn '
           ansible.builtin.set_fact:
             cluster_api_fqdn: "api.{{ cluster_base_domain_out.stdout }}"
@@ -177,13 +198,13 @@
 
         - name: '{{ ansible_name_module }} | Get Existing API custom cert secret'
           ansible.builtin.command: >
-            {{ openshift_cli }} get secret api-secret -n openshift-config
+            {{ openshift_cli }} get secret {{ api_cert_secret_name }} -n openshift-config
           ignore_errors: yes
           register: api_secret_exist
 
         - name: '{{ ansible_name_module }} | Delete Existing API custom cert secret' 
           ansible.builtin.command: >
-            {{ openshift_cli }} delete secret api-secret -n openshift-config
+            {{ openshift_cli }} delete secret {{ api_cert_secret_name }} -n openshift-config
           ignore_errors: yes
           when:
             - api_secret_exist.rc is defined
@@ -192,14 +213,14 @@
 
         - name: '{{ ansible_name_module }} | create API custom cert secret'
           ansible.builtin.command: >
-            {{ openshift_cli }} create secret tls api-secret --cert={{ api_cert_file }} --key={{ api_cert_key_file }} -n openshift-config
+            {{ openshift_cli }} create secret tls {{ api_cert_secret_name }} --cert={{ api_cert_file }} --key={{ api_cert_key_file }} -n openshift-config
 
         - name: '{{ ansible_name_module }} | Patch API Server'
           ansible.builtin.command: >
-            {{ openshift_cli }} patch apiserver cluster --type=merge -p  '{"spec": {"servingCerts": {"namedCertificates": [{"names": ["{{ cluster_api_fqdn }}"], "servingCertificate": {"name": "api-secret"}}]}}}'
+            {{ openshift_cli }} patch apiserver cluster --type=merge -p  '{"spec": {"servingCerts": {"namedCertificates": [{"names": ["{{ cluster_api_fqdn }}"], "servingCertificate": {"name": "{{ api_cert_secret_name }}"}}]}}}'
           register: apiserver_patched
 
-        - name: '{{ ansible_name_module }} | Verify API Server Cert Config' 
+        - name: '{{ ansible_name_module }} | Verify auth pods are running ' 
           ansible.builtin.shell: >
             {{ openshift_cli }} get apiserver cluster -o yaml | grep -i '{{ cluster_api_fqdn }}' 
           register: apiserver_patch_check
@@ -226,11 +247,19 @@
                 {{ openshift_cli }} config refresh-ca-bundle --dry-run
               register: kubeconfig_ca_retrieved
 
+            - name: '{{ ansible_name_module }} | ensure all authentication pods are running ' 
+              ansible.builtin.shell: >
+                {{ openshift_cli }} get po -n openshift-authentication --field-selector status.phase=Running --no-headers | awk '{print $1}' | wc -l 
+              retries: 6
+              delay: 15 
+              register: running_auth_pod_check
+              until: running_auth_pod_check.stdout | int == 3
+
             - name: '{{ ansible_name_module }} | Get ingress CA'
               ansible.builtin.shell: >
-                {{ openshift_cli }} rsh -n openshift-authentication \
+                {{ openshift_cli }} exec -n openshift-authentication \
                  $({{ openshift_cli }} get po -n openshift-authentication --no-headers | head -n+1 | awk '{print $1}') \
-                   cat /run/secrets/kubernetes.io/serviceaccount/ca.crt > {{ kubeconfig_staging_dir }}/{{ cluster_name }}-ingress-ca.crt
+                 -- cat /run/secrets/kubernetes.io/serviceaccount/ca.crt > {{ kubeconfig_staging_dir }}/{{ cluster_name }}-ingress-ca.crt
               register: ingress_ca_out
 
             - name: '{{ ansible_name_module }} | set_fact | kubeconfig_ca_file '

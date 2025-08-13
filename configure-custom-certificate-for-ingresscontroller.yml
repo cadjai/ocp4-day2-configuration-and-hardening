@@ -157,6 +157,12 @@
           register: ingress_ca_cm_exist
 
   tasks:
+    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+      ansible.builtin.set_fact:
+        ingress_cert_secret_name: "ingress-secret"
+      when:
+        - not is ingress_cert_secret_name is defined or ingress_cert_secret_name == ""
+
     - name: Configure ingresscontroller to use custom certificate
       when:
         - ingress_cert_file_exist is defined
@@ -170,13 +176,13 @@
       block:
         - name: '{{ ansible_name_module }} | Get Existing ingress custom cert secret'
           ansible.builtin.command: >
-            {{ openshift_cli }} get secret ingress-secret -n openshift-ingress 
+            {{ openshift_cli }} get secret {{ ingress_cert_secret_name }} -n openshift-ingress 
           ignore_errors: yes
           register: ingress_secret_exist
 
         - name: '{{ ansible_name_module }} | Delete Existing ingress custom cert secret'
           ansible.builtin.command: >
-            {{ openshift_cli }} delete secret ingress-secret -n openshift-ingress
+            {{ openshift_cli }} delete secret {{ ingress_cert_secret_name }} -n openshift-ingress
           ignore_errors: yes
           when:
             - ingress_secret_exist.rc is defined
@@ -185,11 +191,11 @@
 
         - name: '{{ ansible_name_module }} | create ingress custom cert secret'
           ansible.builtin.command: >
-            {{ openshift_cli }} create secret tls ingress-secret --cert={{ ingress_cert_file }} --key={{ ingress_cert_key_file }} -n openshift-ingress
+            {{ openshift_cli }} create secret tls {{ ingress_cert_secret_name }} --cert={{ ingress_cert_file }} --key={{ ingress_cert_key_file }} -n openshift-ingress
 
         - name: '{{ ansible_name_module }} | Patch Ingress Controller'
           ansible.builtin.command: >
-            {{ openshift_cli }} patch ingresscontroller.operator default --type=merge -p  '{"spec":{"defaultCertificate": {"name": "ingress-secret"}}}' -n openshift-ingress-operator
+            {{ openshift_cli }} patch ingresscontroller.operator default --type=merge -p  '{"spec":{"defaultCertificate": {"name": "{{ ingress_cert_secret_name }}"}}}' -n openshift-ingress-operator
 
         - name: '{{ ansible_name_module }} | Create list of CM files to use'
           command: >
@@ -224,7 +230,21 @@
               when:
                 - not ingress_ca_injection_cm_name is defined or ingress_ca_injection_cm_name == ''
 
-            - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM' 
+            - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
+              ansible.builtin.command: >
+                {{ openshift_cli }} get configmap {{ ingress_ca_injection_cm_name }} -n openshift-config
+              register: injection_cm_exist
+
+            - name: '{{ ansible_name_module }} | Delete Existing injection cm'
+              ansible.builtin.command: >
+                {{ openshift_cli }} delete configmap {{ ingress_ca_injection_cm_name }} -n openshift-config
+              ignore_errors: yes
+              when:
+                - injection_cm_exist.rc is defined
+                - injection_cm_exist.rc == 0
+              register: injection_cm_deleted
+
+            - name: '{{ ansible_name_module }} | Add empty ConfigMap to use as CA injection CM'
               ansible.builtin.command: >
                 {{ openshift_cli }} create configmap {{ ingress_ca_injection_cm_name }} -n openshift-config
 

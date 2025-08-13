@@ -39,16 +39,16 @@
       register: login_out
 
   tasks:
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF operator install check tasks'
-      ansible.builtin.import_tasks: tasks/ensure-odf-operator-is-installed.yml
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional ODF operator install check tasks'
+      ansible.builtin.include_tasks: tasks/ensure-odf-operator-is-installed.yml
       vars:
         odf_ns: "{{ odf_operator.deploy_namespace }}"
 
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF validation check tasks'
-      ansible.builtin.import_tasks: tasks/ensure-odf-nodes-exist.yml
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional ODF validation check tasks'
+      ansible.builtin.include_tasks: tasks/ensure-odf-nodes-exist.yml
 
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF Cluster config tasks'
-      ansible.builtin.import_tasks: tasks/configure-odf-cluster.yml
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional ODF Cluster config tasks'
+      ansible.builtin.include_tasks: tasks/configure-odf-cluster.yml
       vars:
         apply_odf_cluster: 'true'
         odf_cluster_cr_template: '../templates/odf-cluster-customresource.yml.j2'
@@ -60,8 +60,22 @@
       when:
         - odf_nodes_count is defined
         - odf_nodes_count | int >= 3
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional ODF OBC PV backingstore config tasks'
-      ansible.builtin.import_tasks: tasks/configure-odf-noobaa-pvbackingstore.yml
+
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional ODF OBC PV backingstore config tasks'
+      ansible.builtin.include_tasks: tasks/configure-odf-noobaa-pvbackingstore.yml
       when:
         - enable_pvbackingstore_obc is defined
-        - enable_pvbackingstore_obc| bool
+        - enable_pvbackingstore_obc | bool
+
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional ODF RGW Object store config tasks'
+      ansible.builtin.include_tasks: tasks/configure-odf-rgw-cephstore.yml
+      when:
+        - enable_rgw_object_store_obc is defined
+        - enable_rgw_object_store_obc | bool
+
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional ODF RGW backingstore config tasks'
+      ansible.builtin.include_tasks: tasks/configure-odf-rgw-backingstore.yml
+      when:
+        - enable_rgw_backingstore is defined
+        - enable_rgw_backingstore | bool
+
