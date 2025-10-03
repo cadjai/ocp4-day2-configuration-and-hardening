@@ -1,0 +1,259 @@
+- name: ' Konductor | Provision UPI Infra | retrieve-and-remove-ebs-volumes.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  vars:
+    module: "Retrieve and remove EBS volumes "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | remove aws dangling volumes if appropriate'
+      when:
+        - (retrieve_dangling_ebs_volumes is defined and retrieve_dangling_ebs_volumes | bool) or (retrieve_attached_volumes is defined and retrieve_attached_volumes | bool )
+      block:
+        - name: '{{ ansible_name_module }} | assert | the volume prefix is defined'
+          ansible.builtin.assert:
+            that:
+              - cluster_name is defined
+              - cluster_name != ''
+            msg: "The cluster name is required to remove or retrieve volumes"
+
+        - name: '{{ ansible_name_module }} | assert | the AWS Region is defined'
+          ansible.builtin.assert:
+            that:
+              - aws_region is defined
+              - aws_region != ''
+            msg: "The AWS region is required to remove or update tags on instances "
+
+        - name: '{{ ansible_name_module }} | assert | the AWS access key is defined'
+          ansible.builtin.assert:
+            that:
+              - aws_access_key is defined
+              - aws_access_key != ''
+            msg: "The AWS access key is required to remove or update tags on instances "
+
+        - name: '{{ ansible_name_module }} | assert | the AWS access secret is defined'
+          ansible.builtin.assert:
+            that:
+              - aws_access_secret is defined
+              - aws_access_secret != ''
+            msg: "The AWS access secret is required to remove or update tags on instances "
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.pip | install required libraries'
+          become: 'true'
+          ansible.builtin.pip:
+            name:
+            - boto3
+            - botocore
+
+  tasks:
+    - name: '{{ ansible_name_module }} | set_fact | cluster name filter'
+      ansible.builtin.set_fact:
+        cluster_name_filter: "Name=tag:KubernetesCluster,Values={{ cluster_name }}"
+      when:
+        - use_cluster_name_filter is defined
+        - use_cluster_name_filter | bool
+        - not cluster_name is defined or cluster_name == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster volume name prefix filter'
+      ansible.builtin.set_fact:
+        cluster_volume_name_prefix_filter: "Name=tag:Name,Values={{ cluster_name }}"
+      when:
+        - not cluster_volume_name_prefix_filter is defined or cluster_volume_name_prefix_filter == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster volume state available filter'
+      ansible.builtin.set_fact:
+        volume_status_available_filter: "Name=status,Values=available"
+      when:
+        - not volume_status_available_filter is defined or volume_status_available_filter == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster volume state in-use filter'
+      ansible.builtin.set_fact:
+        volume_status_inuse_filter: "Name=status,Values=in-use"
+      when:
+        - not volume_status_inuse_filter is defined or volume_status_inuse_filter == ''
+
+    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+      ansible.builtin.shell: >
+        which aws
+      ignore_errors: yes
+      register: aws_binary
+
+    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+      ansible.builtin.assert:
+        that:
+          - aws_binary is defined
+          - aws_binary.rc is defined
+          - aws_binary.rc == 0
+          - aws_binary.stdout is defined
+          - aws_binary.stdout != ''
+        msg: "The AWS CLI binary is required to interact with AWS resources "
+    
+    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
+      ansible.builtin.set_fact:
+        aws_cli: '{{ aws_binary.stdout }}'
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print aws_access_key output '
+      ansible.builtin.debug:
+        var: aws_access_key
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | retrieve attached volumes if appropriate'
+      when:
+        - retrieve_attached_volumes is defined
+        - retrieve_attached_volumes | bool 
+        - aws_region is defined
+        - aws_region != '' 
+        - aws_access_key is defined
+        - aws_access_key != '' 
+        - aws_access_secret is defined
+        - aws_access_secret != '' 
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ aws_cli }}  |  retrieve attached volumes'
+          ansible.builtin.shell: >
+            {{ aws_cli }} ec2 describe-volumes --region={{ aws_region }} \
+               --filters {{ cluster_volume_name_prefix_filter }} {{ volume_status_inuse_filter }} {{ cluster_name_filter_strg }} \
+               --query "Volumes[*].{VolumeID:VolumeId,VolumeType:VolumeType,AZ:AvailabilityZone,KMSKeyID:KmsKeyId,InstanceID:InstanceId,State:State,Name:Tags[?Key=='Name']|[0].Value,ClusterName:Tags[?Key=='KubernetesCluster']|[0].Value}" 
+          ignore_errors: true
+          environment:
+            AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+            AWS_SECRET_ACCESS_KEY: "{{ aws_access_secret }}"
+          vars:
+            cluster_name_filter_strg: "{{ cluster_name_filter if use_cluster_name_filter is defined and use_cluster_name_filter | bool else '' }}" 
+          register: attached_volumes 
+
+        - name: '{{ ansible_name_module }} | set_fact | set attached_volumes_list in array format'
+          ansible.builtin.set_fact:
+            attached_volumes_list: '{{ attached_volumes.stdout | from_json | list }}'
+          when:
+            - attached_volumes is defined
+            - attached_volumes.rc is defined
+            - attached_volumes.rc == 0
+            - attached_volumes.stdout is defined
+            - attached_volumes.stdout != '' 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print attached volumes output '
+          ansible.builtin.debug:
+            msg: "The list of attached volumes for the passed in cluster {{ cluster_name }} is : {{ attached_volumes_list }}"
+            verbosity: 2
+          when:
+            - attached_volumes_list is defined
+            - attached_volumes_list | length > 0
+
+        - name: '{{ ansible_name_module }} | set_fact | set attached volumes in array format'
+          ansible.builtin.set_fact:
+            attached_volumes_yaml: '[{{ attached_volumes_list  | map("to_json") | join(", ") }}]'
+          when:
+            - attached_volumes_list is defined
+            - attached_volumes_list | length > 0
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print attached_volumes_yaml in array format output '
+          ansible.builtin.debug:
+            var: attached_volumes_yaml
+            verbosity: 2
+          when:
+            - attached_volumes_yaml is defined
+            - attached_volumes_yaml | length > 0
+
+        - name: '{{ ansible_name_module }} | write attached volumes to file '
+          ansible.builtin.copy:
+            content: "{{ attached_volumes_yaml }}"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-attached-ebs-volumes-{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M')}}.yaml"
+            force: yes
+          when:
+            - attached_volumes_yaml is defined
+            - attached_volumes_yaml | length > 0
+
+    - name: '{{ ansible_name_module }} | remove dangling volumes if appropriate'
+      when:
+        - retrieve_dangling_ebs_volumes is defined
+        - retrieve_dangling_ebs_volumes | bool 
+        - aws_region is defined
+        - aws_region != '' 
+        - aws_access_key is defined
+        - aws_access_key != '' 
+        - aws_access_secret is defined
+        - aws_access_secret != '' 
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ aws_cli }} | remove dangling volumes '
+          ansible.builtin.shell: >
+            {{ aws_cli }} ec2 describe-volumes --region={{ aws_region }} \
+               --filters {{ cluster_volume_name_prefix_filter }} {{ volume_status_available_filter }} {{ cluster_name_filter_strg }} \
+               --query "Volumes[*].{VolumeID:VolumeId,VolumeType:VolumeType,AZ:AvailabilityZone,KMSKeyID:KmsKeyId,InstanceID:InstanceId,State:State,Name:Tags[?Key=='Name']|[0].Value,ClusterName:Tags[?Key=='KubernetesCluster']|[0].Value}" 
+          ignore_errors: true
+          environment:
+            AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+            AWS_SECRET_ACCESS_KEY: "{{ aws_access_secret }}"
+          vars:
+            cluster_name_filter_strg: "{{ cluster_name_filter if use_cluster_name_filter is defined and use_cluster_name_filter | bool else '' }}" 
+          register: dangling_volumes 
+
+        - name: '{{ ansible_name_module }} | set_fact | set dangling_volumes_list in array format'
+          ansible.builtin.set_fact:
+            dangling_volumes_list: '{{ dangling_volumes.stdout | from_json | list }}'
+          when:
+            - dangling_volumes is defined
+            - dangling_volumes.rc is defined
+            - dangling_volumes.rc == 0
+            - dangling_volumes.stdout is defined
+            - dangling_volumes.stdout != '' 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print dangling volumes output '
+          ansible.builtin.debug:
+            var: dangling_volumes_list
+            verbosity: 2
+          when:
+            - dangling_volumes_list is defined
+            - dangling_volumes_list | length > 0
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print dangling volumes count output '
+          ansible.builtin.debug:
+            msg: "The list of dangling volumes for the passed in cluster {{ cluster_name }} is : {{ dangling_volumes_list }}"
+            verbosity: 2
+          when:
+            - dangling_volumes_list is defined
+            - dangling_volumes_list | length > 0
+
+        - name: '{{ ansible_name_module }} | set_fact | set dangling volumes in array format'
+          ansible.builtin.set_fact:
+            dangling_volumes_yaml: '[{{ dangling_volumes_list  | map("to_json") | join(", ") }}]'
+          when:
+            - dangling_volumes_list is defined
+            - dangling_volumes_list | length > 0
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print dangling_volumes_yaml in array format output '
+          ansible.builtin.debug:
+            var: dangling_volumes_yaml
+            verbosity: 2
+          when:
+            - dangling_volumes_yaml is defined
+            - dangling_volumes_yaml | length > 0
+
+        - name: '{{ ansible_name_module }} | write dangling volumes to remove to file '
+          ansible.builtin.copy:
+            content: "{{ dangling_volumes_yaml }}"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-dangling-ebs-volumes-deleted-{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M')}}.yaml"
+            force: yes
+          when:
+            - dangling_volumes_yaml is defined
+            - dangling_volumes_yaml | length > 0
+
+        - name: '{{ ansible_name_module }} | amazon.aws.ec2_vol | remove remove dangling volumes '
+          amazon.aws.ec2_vol:
+            region: "{{ aws_region }}"
+            access_key: "{{ aws_access_key }}"
+            secret_key: "{{ aws_access_secret }}"
+            id: "{{ item.VolumeID }}"
+            state: absent
+          loop: "{{ dangling_volumes_yaml }}"
+          when:
+            - remove_dangling_volumes is defined
+            - remove_dangling_volumes | bool 
+            - dangling_volumes_yaml is defined
+            - dangling_volumes_yaml | length > 0
+            - item is defined
+            - item.VolumeID is defined
+            - item.VolumeID != '' 
+          register: aws_dangling_volumes_removed 
+
