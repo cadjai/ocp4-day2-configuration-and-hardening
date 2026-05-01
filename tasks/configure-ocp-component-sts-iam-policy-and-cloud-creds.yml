@@ -1,0 +1,235 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | validate ocp_comp_sts_policy_doc_file_template'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_sts_policy_doc_file_template is defined and ocp_comp_sts_policy_doc_file_template != "" 
+    msg: " the ocp_comp_sts_policy_doc_file_template must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | aws_partition'
+  ansible.builtin.assert:
+    that:
+      - aws_partition is defined and aws_partition != "" 
+    msg: " the aws_partition must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | aws_account_id'
+  ansible.builtin.assert:
+    that:
+      - aws_account_id is defined and aws_account_id != "" 
+    msg: " the aws_account_id must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | aws_region'
+  ansible.builtin.assert:
+    that:
+      - aws_region is defined and aws_region != "" 
+    msg: " the aws_region must be defined "
+
+- name: '{{ ansible_name_module }} | set_fact | Set aws_sts_apigateway_id'
+  ansible.builtin.set_fact:
+    aws_sts_apigateway_id: "{{ apg_id_arn if apg_id_arn is defined and apg_id_arn != '' else apg_id_opurl }}"
+  when:
+    - not aws_sts_apigateway_id is defined or aws_sts_apigateway_id == ""
+    - (oidc_provider_arn is defined and oidc_provider_arn != "") or (aws_sts_oidc_provider_url is defined and aws_sts_oidc_provider_url != "")
+  vars:
+    apg_id_arn: "{{ (oidc_provider_arn.split('/')[1]).split('.execute-api')[0] }}"
+    apg_id_opurl: "{{ (aws_sts_oidc_provider_url.split('https://')[1]).split('.execute-api')[0] }}"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | aws_sts_apigateway_id'
+  ansible.builtin.assert:
+    that:
+      - aws_sts_apigateway_id is defined and aws_sts_apigateway_id != "" 
+    msg: " the aws_sts_apigateway_id must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | aws_deploy_stage'
+  ansible.builtin.assert:
+    that:
+      - aws_deploy_stage is defined and aws_deploy_stage != "" 
+    msg: " the aws_deploy_stage must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ocp_comp_ns'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_ns is defined and ocp_comp_ns != "" 
+    msg: " the ocp_comp_ns must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ccoctl_manifest_tag_name'
+  ansible.builtin.assert:
+    that:
+      - ccoctl_manifest_tag_name is defined and ccoctl_manifest_tag_name != "" 
+    msg: "the ccoctl_manifest_tag_name must be defined"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ocp_comp_sa_list'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_sa_list is defined and ocp_comp_sa_list != "" 
+      - ocp_comp_sa_list  | length > 0 
+    msg: " the ocp_comp_sa_list  must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | cluster_name'
+  ansible.builtin.assert:
+    that:
+      - cluster_name is defined and cluster_name != "" 
+    msg: " the cluster_name must be defined "
+
+- name: '{{ ansible_name_module }} | set_fact | Set ocp_comp_sts_policy_docs_file_dir'
+  ansible.builtin.set_fact:
+    ocp_comp_sts_policy_docs_file_dir: "{{ staging_dir }}/sts-iam-policy-docs"
+  when:
+    - not ocp_comp_sts_policy_docs_file_dir is defined or ocp_comp_sts_policy_docs_file_dir == ""
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the staging dir exist '
+  ansible.builtin.file:
+    path: "{{ ocp_comp_sts_policy_docs_file_dir }}"
+    state: directory
+    mode: 0777
+
+- name: '{{ ansible_name_module }} | set_fact | Set ocp_comp_iam_role_name'
+  ansible.builtin.set_fact:
+    ocp_comp_iam_role_name_exp: "{{ ccoctl_manifest_tag_name }}-{{ ocp_comp_ns }}-{{ ocp_comp_aws_cloud_creds_secret_name }}"
+  when:
+    - not ocp_comp_iam_role_name is defined or ocp_comp_iam_role_name == ""
+
+    ### limit the role name to the first 60 character of the name passed in or set
+- name: '{{ ansible_name_module }} | set_fact | Set ocp_comp_iam_role_name'
+  ansible.builtin.set_fact:
+    ocp_comp_iam_role_name: "{{ ocp_comp_iam_role_name_exp[:60] }}"
+  when:
+    - not ocp_comp_iam_role_name is defined or ocp_comp_iam_role_name == "" or ocp_comp_iam_role_name | length > 60
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print ocp_comp_iam_role_name'
+  ansible.builtin.debug:
+    var: ocp_comp_iam_role_name 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print ocp_comp_sa_list'
+  ansible.builtin.debug:
+    var: ocp_comp_sa_list  
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | Render ocp comp aws policy  manifest into place'
+  ansible.builtin.template:
+    src: "{{ ocp_comp_sts_policy_doc_file_template }}"
+    dest: "{{ ocp_comp_sts_policy_docs_file_dir }}/{{ ocp_comp_iam_role_name }}-iam-policy.json"
+    owner: "{{ local_user }}"
+    group: "{{ local_user }}"
+    mode: '0655'
+  register: ocp_comp_sts_policy_doc_file_rendered
+
+- name: '{{ ansible_name_module }} | Render ocp comp aws trust relationship policy manifest into place'
+  ansible.builtin.template:
+    src: "templates/openshift-comp-aws-cloud-credential-trust-relationship-iam-policy.json.j2"
+    dest: "{{ ocp_comp_sts_policy_docs_file_dir }}/{{ trust_doc_file_name }}"
+    owner: "{{ local_user }}"
+    group: "{{ local_user }}"
+    mode: '0655'
+  vars:
+    trust_doc_file_name: "{{ ocp_comp_iam_role_name }}-trust-relationship.json"
+  register: ocp_comp_sts_trust_policy_doc_file_rendered
+    
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ocp comp aws policy successfully rendered'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_sts_policy_doc_file_rendered is defined
+      - ocp_comp_sts_policy_doc_file_rendered.dest is defined
+      - ocp_comp_sts_policy_doc_file_rendered.dest != "" 
+    msg: " ocp comp aws policy file must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ocp comp aws trust relationship policy successfully rendered'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_sts_trust_policy_doc_file_rendered is defined
+      - ocp_comp_sts_trust_policy_doc_file_rendered.dest is defined
+      - ocp_comp_sts_trust_policy_doc_file_rendered.dest != "" 
+    msg: " ocp comp aws trust relationship policy file must be defined "
+
+- name: '{{ ansible_name_module }} | shell:{{ aws_cli }} | OCP Comp IAM role '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam create-role --role-name {{ ocp_comp_iam_role_name }} --assume-role-policy-document file://{{ role_trust_file }}
+  vars:
+    role_trust_file: "{{ ocp_comp_sts_trust_policy_doc_file_rendered.dest }}"
+  failed_when:
+    - ocp_comp_iam_role_created.rc is defined
+    - ocp_comp_iam_role_created.rc > 0 
+    - ocp_comp_iam_role_created.stderr is defined
+    - "not 'EntityAlreadyExists' in ocp_comp_iam_role_created.stderr"
+  register: ocp_comp_iam_role_created
+
+- name: '{{ ansible_name_module }} | shell:{{ aws_cli }} |  OCP Comp IAM role policy '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam put-role-policy --role-name {{ ocp_comp_iam_role_name }}  --policy-name {{ ocp_comp_iam_role_name }} --policy-document file://{{ role_file }}
+  vars:
+    role_file: "{{ ocp_comp_sts_policy_doc_file_rendered.dest }}"
+  when:
+    - ocp_comp_iam_role_created is defined
+    - ocp_comp_iam_role_created.rc is defined
+    - ocp_comp_iam_role_created.rc >= 0 
+  failed_when:
+    - ocp_comp_iam_role_policy_created.rc is defined
+    - ocp_comp_iam_role_policy_created.rc > 0 
+    - ocp_comp_iam_role_policy_created.stderr is defined
+  register: ocp_comp_iam_role_policy_created 
+
+    # Apply this only if declared
+- name: '{{ ansible_name_module }} | Render ocp comp aws cloud creds SAs if needed'
+  when:
+    - create_aws_cloud_creds_secret is defined
+    - create_aws_cloud_creds_secret | bool 
+  block:
+    - name: '{{ ansible_name_module }} | Render ocp comp aws cloud creds into place'
+      ansible.builtin.template:
+        src: "templates/openshift-comp-aws-cloud-credential-secret.yaml.j2"
+        dest: "{{ ocp_comp_sts_policy_docs_file_dir }}/{{ ocp_comp_iam_role_name }}-aws-cloud-credential-secret.yaml"
+        owner: "{{ local_user }}"
+        group: "{{ local_user }}"
+        mode: '0655'
+      when:
+        - ocp_comp_iam_role_created is defined
+        - ocp_comp_iam_role_created.rc is defined
+        - ocp_comp_iam_role_created.rc >= 0 
+      register: ocp_comp_aws_cloud_cred_rendered
+    
+    - name: '{{ ansible_name_module }} | Apply ocp comp aws cloud creds'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ ocp_comp_aws_cloud_cred_rendered.dest }} 
+      when:
+        - ocp_comp_aws_cloud_cred_rendered is defined
+        - ocp_comp_aws_cloud_cred_rendered.dest is defined
+        - ocp_comp_aws_cloud_cred_rendered.dest != "" 
+      register: ocp_comp_aws_cloud_cred_applied 
+
+    #### skipping the creation of default SA since that should already exist
+    # Apply this only if declared
+- name: '{{ ansible_name_module }} | Render ocp comp aws cloud creds SAs if needed'
+  when:
+    - create_aws_cloud_creds_sa is defined
+    - create_aws_cloud_creds_sa | bool 
+  block:
+    - name: '{{ ansible_name_module }} | Render ocp comp aws cloud creds SAs into place'
+      ansible.builtin.template:
+        src: "templates/openshift-comp-aws-sts-sa.yaml.j2"
+        dest: "{{ ocp_comp_sts_policy_docs_file_dir }}/{{ ocp_comp_name }}-{{ ocp_sa }}-aws-sts-sa.yaml"
+        owner: "{{ local_user }}"
+        group: "{{ local_user }}"
+        mode: '0655'
+      loop: "{{ ocp_comp_sa_list }}" 
+      loop_control:
+        loop_var: sa_item
+      when:
+        - ocp_comp_aws_cloud_cred_applied is defined
+        - ocp_comp_aws_cloud_cred_applied.rc is defined
+        - ocp_comp_aws_cloud_cred_applied.rc == 0 
+        - ocp_sa != 'default'
+      vars:
+        ocp_sa: "{{ sa_item }}"
+      register: ocp_comp_aws_sts_sa_rendered
+    
+    - name: '{{ ansible_name_module }} | Apply ocp comp aws cloud creds SAs'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ item.dest }} 
+      loop: "{{ ocp_comp_aws_sts_sa_rendered.results }}"
+      when:
+        - ocp_comp_aws_sts_sa_rendered is defined
+        - ocp_comp_aws_sts_sa_rendered.results is defined
+        - ocp_comp_aws_sts_sa_rendered.results | length > 0 
+        - item.dest is defined
+        - item.dest != "" 
+      register: ocp_comp_aws_cloud_cred_applied 

@@ -1,0 +1,186 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.set_fact | set operator structure'
+  ansible.builtin.set_fact:
+    aws_efs_csi_driver_operator: "{{ default_operators_to_deploy['aws-efs-csi-driver-operator'] }}"
+    aws_efs_csi_driver_ns: "{{ default_operators_to_deploy['aws-efs-csi-driver-operator'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | Ensure AWS EFS CSI Driver Operator is installed '
+  ansible.builtin.include_tasks: tasks/ensure-aws-csi-driver-operator-is-installed.yml
+
+- name: '{{ ansible_name_module }} | Retrieve default value from existing storage classes'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get sc -ojsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}{"\n"}'
+  ignore_errors: true
+  register: default_sc_out
+
+- name: '{{ ansible_name_module }} | set_fact | set default sc '
+  ansible.builtin.set_fact:
+    default_sc_name: '{{ default_sc_out.stdout }}'
+  when:
+    - default_sc_out is defined
+    - default_sc_out.rc is defined
+    - default_sc_out.rc == 0
+    - default_sc_out.stdout is defined
+    - default_sc_out.stdout != ''
+
+- name: '{{ ansible_name_module }} | Retrieve og and sub for tempo'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get sub,og,csv -n  {{ aws_efs_csi_driver_ns }} --no-headers | awk '{print $1}' | cut -d '/' -f 2
+  ignore_errors: true
+  register: aws_efs_csi_driver_install_manifests
+
+   ##### Configure AWS EFS CSI Driver CR 
+- name: '{{ ansible_name_module }} | template | Copy AWS EFS CSI Driver CR to staging location'
+  ansible.builtin.template:
+    src: "{{ aws_csi_driver_cr_template }}"
+    dest: "{{ staging_dir }}/{{ (aws_csi_driver_cr_template | basename).split('.j2')[0] }}"
+    force: yes
+  register: aws_efs_csi_driver_cr_rendered
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | AWS EFS CSI Driver CR'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ aws_efs_csi_driver_cr_rendered.dest }}
+  when:
+    - aws_efs_csi_driver_cr_rendered is defined
+    - aws_efs_csi_driver_cr_rendered.dest is defined
+    - aws_efs_csi_driver_cr_rendered.dest != '' 
+  register: aws_efs_csi_driver_cr_applied
+
+- name: '{{ ansible_name_module }} | Ensure AWS EFS CSI Driver CR number ready'
+  ansible.builtin.shell: > 
+    {{ openshift_cli }} get daemonset aws-efs-csi-driver-node -n {{ aws_efs_csi_driver_ns }}  -o jsonpath='{.status.numberReady}' 
+  register: aws_efs_driver_number_ready
+
+- name: '{{ ansible_name_module }} | Ensure AWS EFS CSI Driver CR desired number'
+  ansible.builtin.shell: > 
+    {{ openshift_cli }} get daemonset aws-efs-csi-driver-node -n {{ aws_efs_csi_driver_ns }}  -o jsonpath='{.status.desiredNumberScheduled}' 
+  register: aws_efs_driver_desired_number
+
+- name: '{{ ansible_name_module }} | assert | The Desired Number matched the ready number '
+  ansible.builtin.assert:
+    that:
+      - aws_efs_driver_number_ready is defined
+      - aws_efs_driver_number_ready.stdout is defined
+      - aws_efs_driver_number_ready.stdout != '' 
+      - aws_efs_driver_number_ready.stdout | int > 0 
+      - aws_efs_driver_desired_number is defined
+      - aws_efs_driver_desired_number.stdout is defined
+      - aws_efs_driver_desired_number.stdout != "" 
+      - aws_efs_driver_desired_number.stdout | int > 0 
+      - aws_efs_driver_number_ready.stdout == aws_efs_driver_desired_number.stdout
+    msg: "The ready number must match the desired number of the daemonset"
+
+
+##### Apply this when usng STS
+- name: '{{ ansible_name_module }} | Apply STS config '
+  when:
+    - use_sts_creds is defined
+    - use_sts_creds | bool 
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | aws_efs_csi_driver_iam_role_name '
+      ansible.builtin.set_fact:
+        aws_efs_csi_driver_iam_role_name: "{{ (cluster_name + ocp_comp_sts_to_configure['openshift-aws-efs-csi-driver'].name)[:60] }}"
+      when:
+        - not aws_efs_csi_driver_iam_role_name is defined or aws_efs_csi_driver_iam_role_name == ""
+
+    - name: '{{ ansible_name_module }} | shell:aws | retrieve tempo aws iam roles '
+      ansible.builtin.shell: >
+        {{ aws_cli }} iam get-role --role-name  {{ aws_efs_csi_driver_iam_role_name }} --region {{ aws_region }} --query 'Role.Arn' --output text
+      when:
+        - not aws_efs_csi_driver_iam_role_arn is defined or aws_efs_csi_driver_iam_role_arn == ""
+      register: aws_efs_csi_driver_iam_role_arn_out 
+
+    - name: '{{ ansible_name_module }} | set_fact | aws_efs_csi_driver_iam_role_arn '
+      ansible.builtin.set_fact:
+        aws_efs_csi_driver_iam_role_arn: '{{ aws_efs_csi_driver_iam_role_arn_out.stdout | trim }}'
+      when:
+        - aws_efs_csi_driver_iam_role_arn_out is defined
+        - aws_efs_csi_driver_iam_role_arn_out.rc is defined
+        - aws_efs_csi_driver_iam_role_arn_out.rc == 0 
+        - aws_efs_csi_driver_iam_role_arn_out.stdout is defined
+        - aws_efs_csi_driver_iam_role_arn_out.stdout != "" 
+
+    - name: '{{ ansible_name_module }} | Retrieve existing loki s3 secret from cluster logging '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get subscription -n {{ aws_efs_csi_driver_ns }}  --no-headers | awk '{print $1}'
+      register: aws_efs_csi_driver_op_sub_out
+
+    - name: '{{ ansible_name_module }} | Retrieve existing loki s3 secret from cluster logging '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} patch subscription {{ aws_efs_csi_driver_op_sub_out.stdout }} -n {{ aws_efs_csi_driver_ns }}  --type='merge' -p '{"spec": {"config": {"env": [{"name": "ROLEARN", "value": "'"{{ aws_efs_csi_driver_iam_role_arn }}"'"}]}}}' 
+      when:
+        - aws_efs_csi_driver_op_sub_out is defined
+        - aws_efs_csi_driver_op_sub_out.rc is defined
+        - aws_efs_csi_driver_op_sub_out.rc == 0 
+        - aws_efs_csi_driver_op_sub_out.stdout is defined
+        - aws_efs_csi_driver_op_sub_out.stdout != "" 
+      register: aws_efs_csi_driver_op_sub_patched
+#
+#    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print tempostack bucket name'
+#      ansible.builtin.debug:
+#        var: tempostack_s3_bucket
+#
+#    - name: '{{ ansible_name_module }} | include_tasks | Import s3 bucket creation tasks'
+#      ansible.builtin.include_tasks: tasks/create-s3-bucket.yml
+#      vars:
+#        bucket_name: "{{ tempostack_s3_bucket }}" 
+#
+#    - name: '{{ ansible_name_module }} | create tempo s3 secret'
+#      ansible.builtin.shell: >
+#        {{ openshift_cli }} create secret generic {{ tempostack_s3_secret }} \
+#          -n {{ tempostack_cr_ns }}  \
+#          --from-literal=bucket={{ tempostack_s3_bucket }} \
+#          --from-literal=region={{ aws_region }} \
+#          --from-literal=role_arn={{ aws_efs_csi_driver_iam_role_arn }} \
+#          --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+#      register: s3_secret_created
+#
+#- name: '{{ ansible_name_module }} | S3 long live secret config '
+#  when:
+#    - not use_sts_creds is defined or not use_sts_creds | bool 
+#  block:
+#    #### weill try to reuse the sam bucket create for the lokistack under cluster logging
+#    - name: '{{ ansible_name_module }} | Update Existing s3 secret'
+#      ansible.builtin.shell: >
+#        {{ openshift_cli }} create secret generic {{ tempostack_s3_secret }} \
+#          -n {{ tempostack_cr_ns }}  \
+#          --from-literal=access_key_id={{ aws_access_key }}\
+#          --from-literal=access_key_secret={{ aws_access_secret }} \
+#          --from-literal=bucket={{ tempostack_s3_bucket }} \
+#          --from-literal=endpoint={{ aws_s3_endpoint }} \
+#          --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+#      register: pull_secret_created
+#      no_log: true
+#
+#- name: "Run AWS bucket creation logic"
+#  when: is_aws_environment | default(false) | bool
+#  block:
+#    - name: '{{ ansible_name_module }} | Import AWS S3 CA CM tasks'
+#      ansible.builtin.include_tasks: tasks/create-aws-s3-cm.yml
+#      vars:
+#        s3_bucket_tls_ca_cm: '{{ tempostack_s3_ca_cm }}'
+#        bucket_namespace: '{{ tempostack_cr_ns }}'
+#
+#   ##### Configure tempo RBAC 
+#- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  tempo RBAC'
+#  ansible.builtin.command: >
+#    {{ openshift_cli }} apply -f {{ tempostack_rbac_template }}
+#  register: aws_efs_csi_driver_rbac_rendered
+#
+#   ##### Configure tempo CR 
+#- name: '{{ ansible_name_module }} | template | Copy tempo CR to staging location'
+#  ansible.builtin.template:
+#    src: "{{ tempostack_cr_template }}"
+#    dest: "{{ cluster_observability_cr_staging_dir }}/{{ (tempostack_cr_template | basename).split('.j2')[0] }}"
+#    force: yes
+#  register: aws_efs_csi_driver_cr_rendered
+#
+#- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  tempo CR rendered'
+#  ansible.builtin.command: >
+#    {{ openshift_cli }} apply -f {{ aws_efs_csi_driver_cr_rendered.dest }}
+#  when:
+#    - aws_efs_csi_driver_cr_rendered is defined
+#    - aws_efs_csi_driver_cr_rendered.dest is defined
+#    - aws_efs_csi_driver_cr_rendered.dest != '' 
+#  register: aws_efs_csi_driver_cr_applied
+

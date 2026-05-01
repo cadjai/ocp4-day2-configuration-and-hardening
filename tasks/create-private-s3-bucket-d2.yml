@@ -1,0 +1,100 @@
+---
+- name: '{{ ansible_name_module }} | shell:aws | Create ccoctl iam user '
+  ansible.builtin.shell: >
+    {{ aws_cli }} s3 ls --bucket-name {{ private_bucket_name }} | awk '{print $3}' 
+  ignore_errors: true
+  register: aws_sts_bucket_out
+
+- name: Print AWS STS S3 Bucket output  
+  ansible.builtin.debug:
+    var: aws_sts_bucket_out.stdout
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:aws | Delete Private s3 bucket '
+  ansible.builtin.shell: >
+    {{ aws_cli }} s3api delete-bucket --bucket {{ private_bucket_name }} --region {{ aws_region }} --output text
+  when:
+    - aws_sts_bucket_out is defined
+    - aws_sts_bucket_out.rc is defined
+    - aws_sts_bucket_out.rc == 0 
+    - aws_sts_bucket_out.stdout is defined
+    - aws_sts_bucket_out.stdout != '' 
+  register: aws_sts_private_s3_delete_out
+
+- name: '{{ ansible_name_module }} | shell:aws | Create Private s3 bucket '
+  ansible.builtin.shell: >
+    {{ aws_cli }} s3api create-bucket --bucket {{ private_bucket_name }} --region {{ aws_region }} \ 
+    --acl {{ private_acl_strg }} --create-bucket-configuration LocationConstraint={{ aws_region }} --output text
+  when:
+    - (aws_sts_bucket_out is defined and aws_sts_bucket_out.rc is defined and aws_sts_bucket_out.rc == 0 and aws_sts_bucket_out.stdout is defined and aws_sts_bucket_out.stdout == '') or (aws_sts_private_s3_delete_out is defined and aws_sts_private_s3_delete_out.rc is defined and aws_sts_private_s3_delete_out.rc == 0 ) 
+  vars:
+    private_acl_strg: "{{ 'private' if make_bucket_private is defined and make_bucket_private | bool else 'authenticated-read' }}"
+  register: aws_sts_private_s3_out
+
+- name: Print  AWS STS private S3  output  
+  ansible.builtin.debug:
+    var: aws_sts_private_s3_out.stdout
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:aws | Apply Public Access Block Config'
+  ansible.builtin.shell: >
+    {{ aws_cli }} s3api put-public-access-block --bucket {{ private_bucket_name }} \
+     --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" --output text
+  when:
+    - make_bucket_private is defined
+    - make_bucket_private | bool
+  register: aws_sts_bucket_pub_access_block_out 
+
+- name: Print AWS STS private S3 Public Access Block output  
+  ansible.builtin.debug:
+    var: aws_sts_bucket_pub_access_block_out.stdout
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:aws | validate  Public Access Block'
+  ansible.builtin.shell: >
+    {{ aws_cli }}  s3api get-public-access-block --bucket {{ private_bucket_name }} 
+  register: aws_sts_bucket_pub_access_get_out 
+
+- name: Print AWS STS private S3 Public Access Block output  
+  ansible.builtin.debug:
+    var: aws_sts_bucket_pub_access_get_out.stdout
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | Set openshift_sts_policy_docs_file_dir'
+  ansible.builtin.set_fact:
+    ocp_comp_sts_policy_docs_file_dir: "{{ staging_dir }}/ocp-sts-iam-policy-docs"
+  when:
+    - not ocp_comp_sts_policy_docs_file_dir is defined or ocp_comp_sts_policy_docs_file_dir == ""
+
+- name: '{{ ansible_name_module }} | set_fact | Set ocp_comp_s3_resource_policy_doc_file_template'
+  ansible.builtin.set_fact:
+    ocp_comp_s3_resource_policy_doc_file_template: "templates/openshift-aws-s3-resource-policy.json.j2"
+  when:
+    - not ocp_comp_s3_resource_policy_doc_file_template is defined or ocp_comp_s3_resource_policy_doc_file_template == ""
+
+- name: '{{ ansible_name_module }} | Render ocp comp aws policy  manifest into place'
+  ansible.builtin.template:
+    src: "{{ ocp_comp_s3_resource_policy_doc_file_template }}"
+    dest: "{{ ocp_comp_sts_policy_docs_file_dir }}/{{ private_bucket_name }}-s3-resource-policy.json"
+    owner: "{{ local_user }}"
+    group: "{{ local_user }}"
+    mode: '0655'
+  register: ocp_s3_resource_policy_doc_file_rendered
+
+- name: '{{ ansible_name_module }} | set_fact | Set s3_resource_policy_file'
+  ansible.builtin.set_fact:
+    s3_resource_policy_file: "{{ ocp_s3_resource_policy_doc_file_rendered.dest }}"
+  when:
+    - ocp_s3_resource_policy_doc_file_rendered is defined
+    - ocp_s3_resource_policy_doc_file_rendered.dest is defined
+    - ocp_s3_resource_policy_doc_file_rendered.dest != "" 
+
+- name: '{{ ansible_name_module }} | shell:aws | Apply S3 VPCE access resource policy Config'
+  ansible.builtin.shell: >
+    {{ aws_cli }} s3api put-bucket-policy --bucket {{ private_bucket_name }} \
+    --policy file://{{ s3_resource_policy_file }} --region {{ aws_region }} --output text
+  when:
+    - add_bucket_vpce_resource_policy is defined
+    - add_bucket_vpce_resource_policy | bool
+  register: aws_s3_bucket_resource_policy_out 
+

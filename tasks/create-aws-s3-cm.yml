@@ -1,0 +1,24 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | tempo_iam_role_arn '
+  ansible.builtin.set_fact:
+    s3_bucket_tls_ca_cm_key: 'ca.crt'
+  when:
+    - not s3_bucket_tls_ca_cm_key is defined or s3_bucket_tls_ca_cm_key == ""
+
+- name: '{{ ansible_name_module }} | Retrieve AWS S3 Certificate from S3 endpoint '
+  ansible.builtin.shell: >
+    openssl s_client -showcerts -connect '{{ aws_s3_endpoint.split('https://')[1] }}:443' \
+       < /dev/null | sed -ne '/-BEGIN CERTIFICATE/,/END CERTIFICATE/p' \
+        > {{ staging_dir }}/aws-s3-ca.crt
+  register: aws_s3_ca_retrieve_out
+
+- name: '{{ ansible_name_module }} | create logging storage CAcm'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} create  configmap {{ s3_bucket_tls_ca_cm }} --from-file={{ s3_bucket_tls_ca_cm_key }}={{ staging_dir }}/aws-s3-ca.crt -n {{ bucket_namespace }} --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+  ignore_errors: yes
+  when:
+    - aws_s3_ca_retrieve_out is defined
+    - aws_s3_ca_retrieve_out.rc is defined
+    - aws_s3_ca_retrieve_out.rc == 0
+
+

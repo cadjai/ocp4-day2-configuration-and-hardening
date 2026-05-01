@@ -1,0 +1,83 @@
+---
+#### Retrieve ocp component iam roles roles 
+- name: '{{ ansible_name_module }} | shell:aws | Create ccoctl iam user '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam list-roles --query 'Roles[?contains(RoleName, `{{ ocp_comp_name }}`)].{RoleName: RoleName, Arn: Arn}'
+  register: aws_sts_iam_roles_out
+
+- name: '{{ ansible_name_module }} | set_fact | aws_sts_iam_roles_list'
+  ansible.builtin.set_fact:
+    aws_sts_iam_roles_list: "{{ aws_sts_iam_roles_out.stdout | from_json }}"
+
+- name: '{{ ansible_name_module }} | set_fact | aws_sts_iam_roles'
+  ansible.builtin.set_fact:
+    aws_sts_iam_roles: []
+
+- name: '{{ ansible_name_module }} | set_fact | aws_sts_iam_roles'
+  ansible.builtin.set_fact:
+    aws_sts_iam_roles: "{{ aws_sts_iam_roles + [{'arn': item.Arn, 'name': item.RoleName}] }}"
+  loop: "{{ aws_sts_iam_roles_list }}"
+  when:
+    - aws_sts_iam_roles_list | length > 0
+    - item is defined
+    - item != ''
+
+- name: '{{ ansible_name_module }} | debug | print iam role list '
+  ansible.builtin.debug:
+    var: aws_sts_iam_roles
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | debug | print iam role in the list '
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ aws_sts_iam_roles }}"
+
+#######  find manifests with POPULATE ROLE ARN AND DELETE THIS LINE snippets in files
+- name: '{{ ansible_name_module }} | find |  Find all manifest files'
+  ansible.builtin.shell: |
+     grep -rl 'POPULATE ROLE ARN AND DELETE THIS LINE' {{ ocp_comp_ccoctl_sts_policy_docs_file_dir }}/manifests
+  failed_when:
+    - cloud_cred_raw_manifests.rc > 0
+    - cloud_cred_raw_manifests.msg != ''
+    - "not 'non-zero return code' in cloud_cred_raw_manifests.msg"
+  register: cloud_cred_raw_manifests
+
+- name: '{{ ansible_name_module }} | debug | print iam role file name '
+  ansible.builtin.debug:
+    var: "{{ ocp_comp_name }}-{{ (cloud_cred_raw_manifests.stdout_lines[0] | basename).split('.yaml')[0].split('-')[:4] | join('-') }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | debug | print iam role arn '
+  ansible.builtin.debug:
+    msg: "{{ aws_sts_iam_roles | selectattr('name', 'match', manifest_role_arn_name) | map(attribute='arn')}}"
+    verbosity: 2
+  vars:
+    manifest_role_arn_name: "{{ ocp_comp_name }}-{{ (cloud_cred_raw_manifests.stdout_lines[0] | basename).split('.yaml')[0].split('-')[:4] | join('-') }}"
+
+#######  Replace role_arn = snippets in manifest files
+- name: '{{ ansible_name_module }} | replace | Replace role arn placeholder string in all manifest files'
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: 'role_arn = '
+    replace: "role_arn = {{ manifest_role_arn | trim }}"
+  loop: "{{ cloud_cred_raw_manifests.stdout_lines }}"
+  when:
+    - cloud_cred_raw_manifests is defined
+    - cloud_cred_raw_manifests.stdout_lines is defined
+    - cloud_cred_raw_manifests.stdout_lines | length > 0
+  vars:
+    manifest_role_arn_name: "{{ ocp_comp_name }}-{{ (item | basename).split('.yaml')[0].split('-')[:4] | join('-') }}"
+    manifest_role_arn: "{{ (aws_sts_iam_roles | selectattr('name', 'match', manifest_role_arn_name) | map(attribute='arn') | list).0 }}"
+  register: manifests_role_arn_replaced
+
+#######  Replace POPULATE ROLE ARN AND DELETE THIS LINE snippets in manifest files
+- name: '{{ ansible_name_module }} | replace | Replace TLS fingerprint URL placeholder string in all manifest files'
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: 'POPULATE ROLE ARN AND DELETE THIS LINE'
+    replace: ''
+  loop: "{{ cloud_cred_raw_manifests.stdout_lines }}"
+  register: populate_role_comments_removed
+
+

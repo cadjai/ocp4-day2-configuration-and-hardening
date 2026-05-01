@@ -1,0 +1,24 @@
+---
+ocp_comp_sts_to_configure:
+  tempo-s3-sts:
+    name: '{{ tempostack_cr_name }}'
+    namespace: '{{ tempostack_cr_namespace }}'
+    iam_role_name: ''
+    iam_params_policy_doc_file: 'templates/openshift-aws-s3-cloud-credential-iam-policy.json.j2'
+    service_accounts:
+      - 'tempo-{{ tempostack_cr_name }}'
+      - 'tempo-{{ tempostack_cr_name }}-query-frontend'
+    use_ccoctl: true
+    aws_service_perms: 's3'
+    aws_cloud_cred_secret_name: 'aws-tempo-s3-cloud-credentials'
+  openshift-aws-efs-csi-driver:
+    name: 'openshift-aws-efs-csi-driver'
+    namespace: 'openshift-cluster-csi-driver'
+    iam_role_name: ''
+    iam_params_policy_doc_file: 'templates/openshift-aws-s3-cloud-credential-iam-policy.json.j2'
+    service_accounts:
+      - 'aws-efs-csi-driver-operator'
+      - 'aws-efs-csi-driver-controller-sa'
+    use_ccoctl: true
+    aws_service_perms: 'elasticfilesystem'
+    aws_cloud_cred_secret_name: 'aws-efs-cloud-credentials'

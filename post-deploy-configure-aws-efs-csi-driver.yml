@@ -1,0 +1,42 @@
+- name: 'Configure AWS EFS CSI driver | post-deploy-configure-aws-efs-csi-driver.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/operators.yml'
+    - 'vars/cluster.yml'
+    - 'vars/fabric.yml'
+  vars:
+    module: "Configure AWS EFS CSI Driver on cluster with STS enabled "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: Ensure Proper Python dependency is installed for Openshift
+      community.general.python_requirements_info:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          --token {{ ocp_cluster_token }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - ocp_cluster_token is defined and ocp_cluster_token != ""
+      register: login_out
+
+    - name: Authenticate with the API
+      ansible.builtin.command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      when:
+        - not ocp_cluster_token is defined or ocp_cluster_token == ""
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | include_tasks | Import AWS CSI Driver config tasks'
+      ansible.builtin.include_tasks: tasks/configure-aws-efs-csi-driver.yml
+

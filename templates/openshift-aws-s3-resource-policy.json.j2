@@ -1,0 +1,22 @@
+{
+   "Version": "2012-10-17",
+   "Id": "PolicyForVPCEndpoint",
+   "Statement": [
+     {
+       "Sid": "AllowAccessFromSpecificVPC",
+       "Effect": "Allow",
+       "Principal": "*",
+       "Action": "s3:*",
+       "Resource": [
+         "arn:{{ aws_partition }}:s3:::{{ private_bucket_name }}",
+         "arn:{{ aws_partition }}:s3:::{{ private_bucket_name }}/*"
+       ],
+       "Condition": {
+         "StringEquals": {
+           "aws:sourceVpce": "{{ aws_s3_vpce }}", 
+           "aws:sourceVpc": "{{ aws_vpc_id }}" 
+         }
+       }
+     }
+   ]
+}

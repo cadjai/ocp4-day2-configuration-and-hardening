@@ -1,0 +1,55 @@
+---
+- name: '{{ ansible_name_module }} | Ensure the cluster bucket_iam_role '
+  ansible.builtin.assert:
+    that:
+      - bucket_iam_role is defined and bucket_iam_role != ""
+    msg: " the bucket_iam_role must be set and valid "
+
+- name: '{{ ansible_name_module }} | Ensure the cluster bucket_iam_role '
+  ansible.builtin.assert:
+    that:
+      - bucket_name is defined and bucket_name != ""
+    msg: " the bucket_name must be set and valid "
+
+- name: Display passed in ARN information
+  ansible.builtin.debug:
+    var: bucket_iam_role
+    verbosity: 2
+
+- name: Get caller identity to confirm credentials are valid
+  amazon.aws.aws_caller_info:
+  register: caller_info
+
+- name: Display caller identity information
+  ansible.builtin.debug:
+    var: caller_info
+    verbosity: 2
+
+- name: Display caller identity information
+  ansible.builtin.debug:
+    msg:
+      - "AWS credential verification successful."
+      - "Account: {{ caller_info.account }}"
+      - "User ID: {{ caller_info.user_id }}"
+      - "ARN: {{ caller_info.arn }}"
+
+#- name: '{{ ansible_name_module }} | Assuming a specific role'
+#  amazon.aws.sts_assume_role:
+#    role_arn: "{{ caller_info.arn }}"
+#    role_session_name: "{{ bucket_name }}-AnsibleS3Session"
+#  register: assumed_role
+
+#- name: '{{ ansible_name_module }} | Assuming a specific role'
+#  amazon.aws.sts_assume_role:
+#    role_arn: "{{ bucket_iam_role }}"
+#    role_session_name: "{{ bucket_name }}-AnsibleS3Session"
+#  register: assumed_role
+
+- name: '{{ ansible_name_module }} | Create an S3 bucket using the temp assumed role'
+  amazon.aws.s3_bucket:
+    name: "{{ bucket_name }}" 
+    state: present
+    region: "{{ aws_region }}" 
+    #aws_access_key: "{{ assumed_role.sts_creds.access_key }}"
+    #aws_secret_key: "{{ assumed_role.sts_creds.secret_key }}"
+    #security_token: "{{ assumed_role.sts_creds.session_token }}"

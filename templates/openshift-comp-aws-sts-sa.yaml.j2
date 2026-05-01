@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ ocp_sa }}
+  namespace: {{ ocp_comp_ns }} 
+  annotations:
+    eks.amazonaws.com/role-arn: arn:{{ aws_partition }}:iam::{{ aws_account_id }}:role/{{ ocp_comp_iam_role_name }}
+

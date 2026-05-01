@@ -1,0 +1,47 @@
+- name: 'Configure aws creds on the bastion | post-deploy-configure-aws-creds.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/cluster.yml'
+    - 'vars/fabric.yml'
+  vars:
+    module: "Configure AWS Credentials "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | Ensure required variables are set'
+      block:
+        - name: '{{ ansible_name_module }} | valide STS required vars'
+          when:
+            - use_sts_creds is defined
+            - use_sts_creds | bool
+          block:
+            - ansible.builtin.assert:
+                that:
+                  - ocp_iam_role_arn is defined and ocp_iam_role_arn != ""
+                msg: " the ocp_iam_role_arn must be set and valid when using STS creds"
+
+        - name: '{{ ansible_name_module }} | valide STS required vars'
+          block:
+            - ansible.builtin.assert:
+                that:
+                  - aws_access_key is defined and aws_access_key != ""
+                msg: " the aws_access_key must be set and valid "
+            - ansible.builtin.assert:
+                that:
+                  - aws_access_secret is defined and aws_access_secret != ""
+                msg: " the aws_access_secret must be set and valid "
+            - ansible.builtin.assert:
+                that:
+                  - aws_region is defined and aws_region != ""
+                msg: " the aws_region must be set and valid "
+            - ansible.builtin.assert:
+                that:
+                  - aws_region is defined and aws_region != ""
+                msg: " the aws_region must be set and valid "
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import aws creds config tasks'
+      ansible.builtin.include_tasks: tasks/configure-aws-creds.yml
+

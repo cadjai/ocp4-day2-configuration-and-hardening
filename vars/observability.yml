@@ -1,0 +1,15 @@
+---
+tempostack_cr_name: 'simple-ts'
+tempostack_cr_ns: 'my-dt'
+tempostack_cr_template: ''
+tempostack_rbac_template: ''
+tempostack_s3_bucket: '{{ cluster_name }}-tempostack-bucket'
+tempostack_s3_secret: 'tempostack-bucket-secret'
+tempostack_s3_ca_cm: 'tempostack-bucket-ca-cm'
+tempostack_gateway_name: '{{ cluster_name }}-gateway'
+tempostack_pvc_size: "10Gi"
+tempostack_tenants:
+  - tenantName: dev
+    tenantId: "1610a0d4-e6971-6767-b345-y456334464trerd"
+  - tenantName: prod 
+    tenantId: "1610a0d4-e6971-6767-b345-y456334464trerp"

@@ -1,0 +1,52 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | aws_region'
+  ansible.builtin.assert:
+    that:
+      - aws_region is defined and aws_region != "" 
+    msg: " the aws_region must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ocp_comp_ns'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_ns is defined and ocp_comp_ns != "" 
+    msg: " the ocp_comp_ns must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ocp_comp_sa_list'
+  ansible.builtin.assert:
+    that:
+      - ocp_comp_sa_list is defined and ocp_comp_sa_list != "" 
+      - ocp_comp_sa_list  | length > 0 
+    msg: " the ocp_comp_sa_list  must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | cluster_name'
+  ansible.builtin.assert:
+    that:
+      - cluster_name is defined and cluster_name != "" 
+    msg: " the cluster_name must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print ocp_comp_sa_list'
+  ansible.builtin.debug:
+    var: ocp_comp_sa_list  
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | Render ocp comp ccoctl request manifest into place'
+  ansible.builtin.template:
+    src: "templates/openshift-sts-component-credential-request.yaml.j2"
+    dest: "{{ cloud_cred_manifests_dir }}/{{ cluster_name }}-{{ ocp_comp_name }}-sts-component-credential-request.yaml"
+    force: true
+    owner: "{{ local_user }}"
+    group: "{{ local_user }}"
+    mode: '0655'
+  register: ocp_comp_ccctl_sts_policy_doc_file_rendered
+
+####### Generate ccoctl manifests for component 
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | validate oidc_provider_arn'
+  ansible.builtin.assert:
+    that:
+      - oidc_provider_arn is defined and oidc_provider_arn != ""
+    msg: " the oidc_provider_arn must be defined "
+
+- name: '{{ ansible_name_module }} | shell:oc | Extract '
+  ansible.builtin.shell: >
+    {{ ccoctl_cli }} aws create-iam-roles --name={{ ccoctl_manifest_tag_name }}  --region={{ aws_region }} --credentials-requests-dir={{ cloud_cred_manifests_dir }}  --output-dir={{ ocp_comp_ccoctl_sts_policy_docs_file_dir }} --identity-provider-arn={{ oidc_provider_arn }}
+

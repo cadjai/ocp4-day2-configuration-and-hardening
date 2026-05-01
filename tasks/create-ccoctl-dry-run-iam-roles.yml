@@ -1,0 +1,73 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | iam_role_prefix '
+  ansible.builtin.set_fact:
+    iam_role_prefix: "05-"
+  when:
+    - not iam_role_prefix is defined or iam_role_prefix == ""
+
+- name: '{{ ansible_name_module }} | set_fact | iam_policy_prefix '
+  ansible.builtin.set_fact:
+    iam_policy_prefix: "06-"
+  when:
+    - not iam_policy_prefix is defined or iam_policy_prefix == ""
+
+#######  find AWS IAM role  to apply
+- name: '{{ ansible_name_module }} | find |  Find all IAM role manifest files'
+  ansible.builtin.find:
+    path: "{{ ccoctl_manifests_dir }}"
+    recurse: yes
+    patterns: "*-role.json"
+  register: iam_role_raw_manifests
+
+- name: '{{ ansible_name_module }} | set_fact | iam_role_manifests_paths file paths'
+  ansible.builtin.set_fact:
+    iam_role_manifests_paths: "{{ iam_role_raw_manifests.files | map(attribute='path') | list }}"
+  when:
+    - iam_role_raw_manifests is defined
+    - iam_role_raw_manifests.files is defined
+    - iam_role_raw_manifests.files | length > 0
+
+#######  find AWS IAM role policies to apply
+- name: '{{ ansible_name_module }} | find |  Find all IAM policy manifest files'
+  ansible.builtin.find:
+    path: "{{ ccoctl_manifests_dir }}"
+    recurse: yes
+    patterns: "*-policy.json"
+  register: iam_policy_raw_manifests
+
+- name: '{{ ansible_name_module }} | set_fact | iam_policy_manifests_paths file paths'
+  ansible.builtin.set_fact:
+    iam_policy_manifests_paths: "{{ iam_policy_raw_manifests.files | map(attribute='path') | list }}"
+  when:
+    - iam_policy_raw_manifests is defined
+    - iam_policy_raw_manifests.files is defined
+    - iam_policy_raw_manifests.files | length > 0
+
+ ####### Instantiate AWS IAM policies from CCOCTL  for component
+- name: '{{ ansible_name_module }} | shell:oc | Extract '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam create-role --role-name {{ role_name }} --cli-input-json file://{{ item }}
+  loop: "{{ iam_role_manifests_paths }}"
+  when:
+    - iam_role_manifests_paths is defined
+    - iam_role_manifests_paths | default([], true) | length > 0
+  vars:
+    role_name: "{{ ((item.split(iam_role_prefix)[1]).split('-role.json')[0]).split('0-')[1] }}"
+  failed_when:
+    - iam_roles_created.rc is defined
+    - iam_roles_created.rc > 0
+    - iam_roles_created.stderr is defined
+    - "not 'EntityAlreadyExists' in iam_roles_created.stderr"
+  register: iam_roles_created
+
+- name: '{{ ansible_name_module }} | shell:oc | Extract '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam  put-role-policy --role-name {{ role_name }} --policy-name {{ role_name }}  --policy-document file://{{ item }}
+  loop: "{{ iam_policy_manifests_paths }}"
+  when:
+    - iam_policy_manifests_paths is defined
+    - iam_policy_manifests_paths | default([], true) | length > 0
+  vars:
+    role_name: "{{ ((item.split(iam_policy_prefix)[1]).split('-policy.json')[0]).split('0-')[1] }}"
+  register: iam_policies_created
+

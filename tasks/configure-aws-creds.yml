@@ -1,0 +1,44 @@
+---
+- name: '{{ ansible_name_module }} | command:which | Check if aws is installed'
+  ansible.builtin.shell: >
+    which aws
+  ignore_errors: yes
+  register: aws_binary
+
+- name: '{{ ansible_name_module }} | set_fact | awscli '
+  ansible.builtin.set_fact:
+    awscli: "{{ aws_binary.stdout }}"
+  when:
+    - (override_awscli is defined and override_awscli | bool) or (not awscli is defined or awscli == '')
+    - aws_binary.stdout is defined
+    - aws_binary.stdout !=  ''
+    - aws_binary.rc is defined
+    - aws_binary.rc == 0
+
+- name: '{{ ansible_name_module }} | ssh | file:directory | remove existing aws config files'
+  ansible.builtin.file:
+    path: '{{ local_home }}/.aws/{{ item }}'
+    state: absent
+  loop:
+    - config
+    - credentials
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell | Configure default aws profile'
+  ansible.builtin.shell: |
+    {{ awscli }} configure set default.region {{ aws_region }}
+    {{ awscli }} configure set aws_access_key_id {{ aws_access_key }} --profile  default
+    {{ awscli }} configure set aws_secret_access_key {{ aws_access_secret }} --profile default
+    #{{ awscli }} configure --profile default  --no-cli-auto-prompt
+  register: aws_configured
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell | Configure default aws profile'
+  ansible.builtin.shell: |
+    {{ awscli }} configure set default.region {{ aws_region }}
+    {{ awscli }} configure set role_arn {{ ocp_iam_role_arn }} --profile  default
+    {{ awscli }} configure set source_profile default   --profile  default
+    {{ awscli }} configure set region {{ aws_region }}  --profile  default
+  when:
+    - use_sts_creds is defined
+    - use_sts_creds | bool
+  register: aws_configured
+
