@@ -45,7 +45,7 @@
 
 - name: '{{ ansible_name_module }} | debug | print iam role file name '
   ansible.builtin.debug:
-    var: "{{ ocp_comp_name }}-{{ (cloud_cred_raw_manifests.stdout_lines[0] | basename).split('.yaml')[0].split('-')[:4] | join('-') }}"
+    var: "{{ ocp_comp_name }}-{{ (cloud_cred_raw_manifests.stdout_lines[0] | basename).split('.yaml')[0].split('-')[:5] | join('-') }}"
     verbosity: 2
 
 - name: '{{ ansible_name_module }} | debug | print iam role arn '
@@ -53,7 +53,7 @@
     msg: "{{ aws_sts_iam_roles | selectattr('name', 'match', manifest_role_arn_name) | map(attribute='arn')}}"
     verbosity: 2
   vars:
-    manifest_role_arn_name: "{{ ocp_comp_name }}-{{ (cloud_cred_raw_manifests.stdout_lines[0] | basename).split('.yaml')[0].split('-')[:4] | join('-') }}"
+    manifest_role_arn_name: "{{ ocp_comp_name }}-{{ (cloud_cred_raw_manifests.stdout_lines[0] | basename).split('.yaml')[0].split('-')[:5] | join('-') }}"
 
 #######  Replace role_arn = snippets in manifest files
 - name: '{{ ansible_name_module }} | replace | Replace role arn placeholder string in all manifest files'
@@ -67,7 +67,7 @@
     - cloud_cred_raw_manifests.stdout_lines is defined
     - cloud_cred_raw_manifests.stdout_lines | length > 0
   vars:
-    manifest_role_arn_name: "{{ ocp_comp_name }}-{{ (item | basename).split('.yaml')[0].split('-')[:4] | join('-') }}"
+    manifest_role_arn_name: "{{ ocp_comp_name }}-{{ (item | basename).split('.yaml')[0].split('-')[:5] | join('-') }}"
     manifest_role_arn: "{{ (aws_sts_iam_roles | selectattr('name', 'match', manifest_role_arn_name) | map(attribute='arn') | list).0 }}"
   register: manifests_role_arn_replaced
 
