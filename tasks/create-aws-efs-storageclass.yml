@@ -1,0 +1,20 @@
+---
+- name: '{{ ansible_name_module }} | include_tasks | Import EFS FS validation tasks'
+  ansible.builtin.include_tasks: tasks/validate-aws-efs-fs.yml 
+
+- name: '{{ ansible_name_module }} | template | Render EFS SC CR to staging location'
+  ansible.builtin.template:
+    src: "templates/aws-efs-csi-driver-storage-class.yaml.j2"
+    dest: "{{ staging_dir }}/{{ cluster_name }}-{{ aws_efs_fs_name }}-aws-efs-csi-driver-storage-class.yaml"
+    force: yes
+  register: efs_sc_rendered
+
+- name: '{{ ansible_name_module }} | Apply EFS SC Config CR '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} apply -f  {{ efs_sc_rendered.dest }}
+  when:
+    - efs_sc_rendered is defined
+    - efs_sc_rendered.dest is defined
+    - efs_sc_rendered.dest != ''
+  register: efs_sc_applied
+

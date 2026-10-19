@@ -1,0 +1,130 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure comp_name '
+  ansible.builtin.assert:
+    that:
+      - comp_name is defined
+      - comp_name != ''
+    msg: "the comp_name as defined within the ocp_comp_sts_to_configure varaible structure is required"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure comp_ns'
+  ansible.builtin.assert:
+    that:
+      - comp_ns is defined
+      - comp_ns != ''
+    msg: "the comp_ns is required"
+
+- name: '{{ ansible_name_module }} | set_fact | comp_sub_name'
+  ansible.builtin.set_fact:
+    comp_sub_name: ""
+  when:
+    - not comp_sub_name is defined or comp_sub_name == ""
+
+- name: '{{ ansible_name_module }} | set_fact | comp_s2_role_name'
+  ansible.builtin.set_fact:
+    comp_s3_role_name: "{{ ocp_comp_sts_to_configure[comp_name].name }}"
+
+- name: '{{ ansible_name_module }} | set_fact | comp_iam_role_name '
+  ansible.builtin.set_fact:
+    comp_iam_role_name: "{{ (cluster_name + '-openshift-' + comp_s3_role_name)[:64] }}"
+  when:
+    - not comp_iam_role_name is defined or comp_iam_role_name == ""
+
+- name: '{{ ansible_name_module }} | shell:aws | retrieve component aws iam roles '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam get-role --role-name  {{ comp_iam_role_name }} --region {{ aws_region }} --query 'Role.Arn' --output text
+  when:
+    - not comp_iam_role_arn is defined or comp_iam_role_arn == ""
+  register: comp_iam_role_arn_out
+
+- name: '{{ ansible_name_module }} | set_fact | comp_iam_role_arn '
+  ansible.builtin.set_fact:
+    comp_iam_role_arn: '{{ comp_iam_role_arn_out.stdout | trim }}'
+  when:
+    - comp_iam_role_arn_out is defined
+    - comp_iam_role_arn_out.rc is defined
+    - comp_iam_role_arn_out.rc == 0
+    - comp_iam_role_arn_out.stdout is defined
+    - comp_iam_role_arn_out.stdout != ""
+
+- name: '{{ ansible_name_module }} | Retrieve existing component subscription '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get subscription.operators.coreos.com {{ comp_sub_name }} -n {{ comp_ns }}  --no-headers | awk '{print $1}'
+  register: comp_op_sub_out
+
+- name: '{{ ansible_name_module }} | Patch component subscription '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} patch subscription.operators.coreos.com {{ comp_op_sub_out.stdout }} -n {{ comp_ns }}  --type='merge' -p '{"spec": {"config": {"env": [{"name": "ROLEARN", "value": "'"{{ comp_iam_role_arn }}"'"},{"name": "AWS_STS_REGIONAL_ENDPOINTS", "value": "regional"},{"name": "AWS_REGION", "value": "'"{{ aws_region }}"'"},{"name": "AWS_DEFAULT_REGION", "value": "'"{{ aws_region }}"'"}]}}}'
+  when:
+    - comp_op_sub_out is defined
+    - comp_op_sub_out.rc is defined
+    - comp_op_sub_out.rc == 0
+    - comp_op_sub_out.stdout is defined
+    - comp_op_sub_out.stdout != ""
+  register: comp_op_sub_patched
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print component bucket name'
+  ansible.builtin.debug:
+    var: comp_s3_bucket
+
+- name: '{{ ansible_name_module }} | Configure subscription related S3 bucket and secret for STS if applicable'
+  when:
+    - create_s3_and_secret is defined
+    - create_s3_and_secret | bool
+  block: 
+    - name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure comp_s3_bucket'
+      ansible.builtin.assert:
+        that:
+          - comp_s3_bucket is defined
+          - comp_s3_bucket != ''
+        msg: "the comp_s3_bucket is required if a secret is needed"
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure comp_s3_secret'
+      ansible.builtin.assert:
+        that:
+          - comp_s3_secret is defined
+          - comp_s3_secret != ''
+        msg: "the comp_s3_secret is required if a secret is needed"
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.assert | ensure comp_cr_ns'
+      ansible.builtin.assert:
+        that:
+          - comp_cr_ns is defined
+          - comp_cr_ns != ''
+        msg: "the comp_cr_ns is required if a secret is needed"
+
+    - name: '{{ ansible_name_module }} | include_tasks | Import s3 bucket creation tasks'
+      ansible.builtin.include_tasks: tasks/create-s3-bucket-with-iam-role.yml
+      vars:
+        bucket_name: "{{ comp_s3_bucket }}"
+        bucket_iam_role: "{{ comp_iam_role_arn }}"
+
+    - name: '{{ ansible_name_module }} | set_fact | comp_s3_bucket_secret_key '
+      ansible.builtin.set_fact:
+        comp_s3_bucket_secret_key: 'bucket'
+      when:
+        - not comp_s3_bucket_secret_key is defined or comp_s3_bucket_secret_key == ''
+        
+    - name: '{{ ansible_name_module }} | create component s3 secret'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} create secret generic {{ comp_s3_secret }} \
+          -n {{ comp_cr_ns }}  \
+          --from-literal={{ comp_s3_bucket_secret_key }}={{ comp_s3_bucket }} \
+          --from-literal=region={{ aws_region }} \
+          --from-literal=role_arn={{ comp_iam_role_arn }} \
+          --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+      register: s3_secret_created
+
+- name: '{{ ansible_name_module }} | set_fact |  bucket_iam_role_{{ comp_name }}'
+  ansible.builtin.set_fact:
+    bucket_iam_role_{{ comp_name.replace('-','_') }}: "{{ comp_iam_role_arn }}"
+
+- name: '{{ ansible_name_module }} | set_fact | comp_iam_role_arn to empty string'
+  ansible.builtin.set_fact:
+    comp_iam_role_arn: "" 
+    comp_iam_role_name: ""
+  when:
+    - comp_iam_role_arn_out is defined
+    - comp_iam_role_arn_out.rc is defined
+    - comp_iam_role_arn_out.rc == 0
+    - comp_iam_role_arn_out.stdout is defined
+    - comp_iam_role_arn_out.stdout != ""

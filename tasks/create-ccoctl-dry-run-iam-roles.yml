@@ -46,13 +46,13 @@
  ####### Instantiate AWS IAM policies from CCOCTL  for component
 - name: '{{ ansible_name_module }} | shell:oc | Extract '
   ansible.builtin.shell: >
-    {{ aws_cli }} iam create-role --role-name {{ role_name }} --cli-input-json file://{{ item }}
+    {{ aws_cli }} iam create-role --role-name {{ role_name }} --assume-role-policy-document file://{{ item }}
   loop: "{{ iam_role_manifests_paths }}"
   when:
     - iam_role_manifests_paths is defined
     - iam_role_manifests_paths | default([], true) | length > 0
   vars:
-    role_name: "{{ ((item.split(iam_role_prefix)[1]).split('-role.json')[0]).split('0-')[1] }}"
+    role_name: "{{ (((item.split(iam_role_prefix)[1]).split('-role.json')[0])[2:])[:64] }}"
   failed_when:
     - iam_roles_created.rc is defined
     - iam_roles_created.rc > 0
@@ -68,6 +68,6 @@
     - iam_policy_manifests_paths is defined
     - iam_policy_manifests_paths | default([], true) | length > 0
   vars:
-    role_name: "{{ ((item.split(iam_policy_prefix)[1]).split('-policy.json')[0]).split('0-')[1] }}"
+    role_name: "{{ (((item.split(iam_policy_prefix)[1]).split('-policy.json')[0])[2:])[:64] }}"
   register: iam_policies_created
 

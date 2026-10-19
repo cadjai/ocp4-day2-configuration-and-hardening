@@ -1,0 +1,22 @@
+---
+- name: '{{ ansible_name_module }} | Retrieve existing loki s3 secret from cluster logging '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get subscription.operators.coreos.com -A   --no-headers | awk '{print " -n "$1 " " $2 }'
+  register: all_op_sub_out
+
+- name: '{{ ansible_name_module }} | Configure env for argo subscription'
+  when:
+    - all_op_sub_out is defined
+    - all_op_sub_out.rc is defined
+    - all_op_sub_out.rc == 0
+    - all_op_sub_out.stdout_lines is defined
+    - all_op_sub_out.stdout_lines | length > 0 
+  block:
+    - name: '{{ ansible_name_module }} | Patch operator sub '
+      ansible.builtin.shell: |  
+        {{ openshift_cli }} patch subscription.operators.coreos.com {{ item }} --type='merge' -p '{"spec": {"config": {"nodeSelector": {"node-role.kubernetes.io/{{ infra_label }}": ""}}}}'
+        {{ openshift_cli }} patch subscription.operators.coreos.com {{ item }} --type='json' -p='[{"op": "add", "path": "/spec/config/tolerations/-", "value": {"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoSchedule"}}]'
+        {{ openshift_cli }} patch subscription.operators.coreos.com {{ item }} --type='json' -p='[{"op": "add", "path": "/spec/config/tolerations/-", "value": {"key": "{{ infra_label }}", "value": "{{ infra_taint_value }}", "effect": "NoExecute"}}]'
+      loop: "{{ all_op_sub_out.stdout_lines }}"
+      register: all_op_sub_patched_node_selector
+    

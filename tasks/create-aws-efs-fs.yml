@@ -1,0 +1,32 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | reset api gateway ids'
+  ansible.builtin.set_fact:
+    aws_efs_createion_date: "{{ now(fmt='%m%d%y') }}" 
+
+- name: '{{ ansible_name_module }} | set_fact | aws_efs_fs_name'
+  ansible.builtin.set_fact:
+    aws_efs_fs_name: "{{ cluster_name }}shared-efs"
+  when:
+    - not aws_efs_fs_name is defined or aws_efs_fs_name == ""
+
+- name: '{{ ansible_name_module }} | set_fact | aws_efs_creation_token'
+  ansible.builtin.set_fact:
+    aws_efs_creation_token: "{{ aws_efs_fs_name }}-{{ aws_efs_createion_date }}"
+  when:
+    - not aws_efs_creation_token is defined or aws_efs_creation_token == ""
+
+- name: '{{ ansible_name_module }} | shell:aws | create AWS EFS FS '
+  ansible.builtin.shell: >
+    {{ aws_cli }} efs create-file-system --creation-token {{ aws_efs_creation_token }} --encrypted  --region {{ aws_region }} --tags Key=Name,Value={{ aws_efs_fs_name }} Key=Cluster,Value={{ cluster_name }} Key=openshift.io/cloud-credential-operator/{{ ccoctl_manifest_tag_name }},Value=owned  --query 'FileSystemId' --output text
+  register: aws_efs_fs_out
+
+- name: '{{ ansible_name_module }} | set_fact | aws_efs_fs_id '
+  ansible.builtin.set_fact:
+    aws_efs_fs_id: "{{ aws_efs_fs_out.stdout }}"
+  when:
+    - aws_efs_fs_out is defined
+    - aws_efs_fs_out.rc is defined
+    - aws_efs_fs_out.rc == 0
+    - aws_efs_fs_out.stdout is defined
+    - aws_efs_fs_out.stdout != ''
+

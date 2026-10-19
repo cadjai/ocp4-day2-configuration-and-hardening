@@ -1,0 +1,69 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | otlp NS '
+  ansible.builtin.set_fact:
+    otlp_ns: "{{ observability_operators['opentelemetry_product'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | Ensure Cluster Observability Operators are installed '
+  ansible.builtin.include_tasks: tasks/ensure-clusterlogging-operators-are-installed.yml
+  vars:
+    observability_ns: "{{ observability_operators['cluster_logging'].deploy_namespace }}"
+    coo_ns: "{{ observability_operators['cluster_observability_operator'].deploy_namespace }}"
+    otlp_ns: "{{ observability_operators['opentelemetry_product'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | set_fact | set staging dir fact'
+  ansible.builtin.set_fact:
+    cluster_observability_cr_staging_dir: "{{ staging_dir | d('/tmp', true) }}"
+  when:
+    - not cluster_observability_cr_staging_dir is defined or cluster_observability_cr_staging_dir == ''
+
+- name: '{{ ansible_name_module }} | Retrieve default value from existing storage classes'
+  ansible.builtin.include_tasks: tasks/retrieve-default-sc.yml
+
+- name: '{{ ansible_name_module }} | Retrieve og and sub for oltp'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get sub,og,csv -n  {{ otlp_ns }} --no-headers | awk '{print $1}' | cut -d '/' -f 2
+  ignore_errors: true
+  register: oltp_install_manifests
+
+- name: '{{ ansible_name_module }} | Create CR  Namespace'
+  ansible.builtin.command: >
+    {{ openshift_cli }}  new-project '{{ opentelemetry_cr_ns }}' \
+      --display-name='{{ opentelemetry_cr_ns }}' \
+       --description='{{ opentelemetry_cr_ns }}'
+  failed_when: "cr_ns_created.rc >=1 and not ' already exists' in cr_ns_created.stderr"
+  register: cr_ns_created
+
+   ##### Configure otlp RBAC 
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  OLTP RBAC'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ opentelemetry_rbac_template }}
+  register: otlp_rbac_rendered
+
+- name: '{{ ansible_name_module }} | shell: oc | Create log collector SA'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} create serviceaccount {{ opentelemetry_cr_service_account }} -n {{ opentelemetry_cr_ns }}
+  failed_when: "otel_sa.rc >=1 and not ' already exists' in otel_sa.stderr"
+  register: otel_sa
+
+- name: '{{ ansible_name_module }} | shell: oc | Create RB for SA'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} adm policy add-cluster-role-to-user {{ tempostack_traces_write_cr }} system:serviceaccount:{{ opentelemetry_cr_ns }}:{{ opentelemetry_cr_service_account }}
+  register: otel_sa_rb
+
+   ##### Configure otlp CR 
+- name: '{{ ansible_name_module }} | template | Copy OLTP CR to staging location'
+  ansible.builtin.template:
+    src: "{{ opentelemetry_cr_template }}"
+    dest: "{{ cluster_observability_cr_staging_dir }}/{{ (opentelemetry_cr_template | basename).split('.j2')[0] }}"
+    force: yes
+  register: otlp_cr_rendered
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  OLTP CR rendered'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ otlp_cr_rendered.dest }}
+  when:
+    - otlp_cr_rendered is defined
+    - otlp_cr_rendered.dest is defined
+    - otlp_cr_rendered.dest != '' 
+  register: otlp_cr_applied
+

@@ -1,0 +1,65 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | sa_iam_role_arn '
+  ansible.builtin.set_fact:
+    sa_iam_role_arn: "{{ sa_comp_iam_role_arn }}"
+  when:
+    - sa_comp_iam_role_arn is defined and sa_comp_iam_role_arn != ""
+
+- name: '{{ ansible_name_module }} | set_fact | sa_iam_role_name'
+  ansible.builtin.set_fact:
+    sa_iam_role_name: "{{ sa_comp_iam_role_name }}"
+  when:
+    - sa_comp_iam_role_name is defined and sa_comp_iam_role_name != ""
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | sa_iam_role_name or sa_iam_role_arn'
+  ansible.builtin.assert:
+    that:
+      - (sa_iam_role_name is defined and sa_iam_role_name != "") or (sa_iam_role_arn is defined and sa_iam_role_arn != "")
+    msg: " the sa_iam_role_name or sa_iam_role_arn must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | sa_name'
+  ansible.builtin.assert:
+    that:
+      - sa_name is defined and sa_name != ""
+    msg: " the sa_name must be defined "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | sa_ns'
+  ansible.builtin.assert:
+    that:
+      - sa_ns is defined and sa_ns != ""
+    msg: " the sa_ns must be defined "
+
+- name: '{{ ansible_name_module }} | shell:aws | retrieve SA aws iam roles '
+  ansible.builtin.shell: >
+    {{ aws_cli }} iam get-role --role-name  {{ sa_iam_role_name }} --region {{ aws_region }} --query 'Role.Arn' --output text
+  when:
+    - not sa_iam_role_arn is defined or sa_iam_role_arn == ""
+  register: sa_iam_role_arn_out
+
+- name: '{{ ansible_name_module }} | set_fact | sa_iam_role_arn '
+  ansible.builtin.set_fact:
+    sa_iam_role_arn: "{{ sa_iam_role_arn_out.stdout | trim }}"
+  when:
+    - sa_iam_role_arn_out is defined
+    - sa_iam_role_arn_out.rc is defined
+    - sa_iam_role_arn_out.rc == 0
+    - sa_iam_role_arn_out.stdout is defined
+    - sa_iam_role_arn_out.stdout != ""
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Pirnt output of  sa_iam_role_arn '
+  ansible.builtin.debug: 
+    var: sa_iam_role_arn
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.assert | sa_iam_role_arn'
+  ansible.builtin.assert:
+    that:
+      - sa_iam_role_arn is defined 
+      - sa_iam_role_arn != ""
+    msg: " the sa_iam_role_arn must be defined "
+
+- name: '{{ ansible_name_module }} | Annotate SA with IAM Role ARN '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} annotate serviceaccount {{ sa_name }} -n {{ sa_ns }} cloudcredential.openshift.io/role-arn={{ sa_iam_role_arn }} --overwrite 
+  register: sa_iam_arn_annotated_out
+

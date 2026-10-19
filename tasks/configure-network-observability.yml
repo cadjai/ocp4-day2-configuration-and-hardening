@@ -1,0 +1,232 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | NOO NS '
+  ansible.builtin.set_fact:
+    noo_ns: "{{ observability_operators['netobserv_operator'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | set_fact | NOO NS '
+  ansible.builtin.set_fact:
+    netobserv_cr_ns: "netobserv"
+  when:
+    - not netobserv_cr_ns is defined or netobserv_cr_ns == ""
+
+- name: '{{ ansible_name_module }} | Ensure Cluster Observability Operators are installed '
+  ansible.builtin.include_tasks: tasks/ensure-clusterlogging-operators-are-installed.yml
+  vars:
+    observability_ns: "{{ observability_operators['cluster_logging'].deploy_namespace }}"
+    coo_ns: "{{ observability_operators['cluster_observability_operator'].deploy_namespace }}"
+    noo_ns: "{{ observability_operators['netobserv_operator'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | set_fact | set staging dir fact'
+  ansible.builtin.set_fact:
+    cluster_observability_cr_staging_dir: "{{ staging_dir | d('/tmp', true) }}"
+  when:
+    - not cluster_observability_cr_staging_dir is defined or cluster_observability_cr_staging_dir == ''
+
+- name: '{{ ansible_name_module }} | Retrieve default value from existing storage classes'
+  ansible.builtin.include_tasks: tasks/retrieve-default-sc.yml
+
+   ##### only do this is a loki stack instance needsto be configured 
+- name: '{{ ansible_name_module }} | configure  lokistack if necessary '
+  when:
+    - netobserv_lokistack_deploy_instance is defined
+    - netobserv_lokistack_deploy_instance | bool 
+    - netobserv_without_loki is defined and not netobserv_without_loki | bool or not netobserv_without_loki is defined
+  block:
+    - name: '{{ ansible_name_module }} | Apply STS config '
+      when:
+        - not use_sts_creds is defined or not use_sts_creds | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | extracted_cred_dir '
+          ansible.builtin.set_fact:
+            extracted_cred_dir: '{{ staging_dir }}/extraction'
+        
+        - name: '{{ ansible_name_module }} | ansible.builtin.file | create cred extraction dir'
+          ansible.builtin.file:
+            path: "{{ extracted_cred_dir }}"
+            state: directory
+            mode: 0777
+        
+        - name: '{{ ansible_name_module }} | include_tasks | Import s3 bucket creation tasks'
+          ansible.builtin.include_tasks: tasks/create-s3-bucket.yml
+          vars:
+            bucket_name: "{{ netobserv_s3_bucket }}"
+            bucket_namespace: "{{ noo_ns }}"
+
+        - name: '{{ ansible_name_module }} | Update Existing  loki s3 secret'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} create secret generic {{ netobserv_s3_secret }} \
+              -n {{ noo_ns }}  \
+              --from-literal=access_key_id={{ netobserv_aws_access_key }} \
+              --from-literal=access_key_secret={{ netobserv_aws_access_secret }} \
+              --from-literal=bucketnames={{ netobserv_s3_bucket }} \
+              --from-literal=endpoint={{ netobserv_aws_s3_endpoint }} \
+              --from-literal=region={{ netobserv_aws_region }} \
+              --from-literal=forcepathstyle='true' \
+              --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+          vars:
+            netobserv_aws_access_key: "{{ odf_bucket_access_key if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_access_key is defined and odf_bucket_access_key != '' else aws_access_key }}"
+            netobserv_aws_access_secret: "{{ odf_bucket_access_secret if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_access_secret is defined and odf_bucket_access_secret != '' else aws_access_secret }}"
+            netobserv_aws_s3_endpoint: "{{ odf_bucket_endpoint if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_endpoint is defined and odf_bucket_endpoint != '' else aws_access_secret }}"
+            netobserv_aws_region: "{{ odf_bucket_region if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_region is defined and odf_bucket_region != '' else aws_region }}"
+          register: s3_secret_created
+          no_log: true
+    
+    - name: '{{ ansible_name_module }} | Apply STS config '
+      when:
+        - use_sts_creds is defined
+        - use_sts_creds | bool
+      block:
+        - name: '{{ ansible_name_module }} | include_tasks | Import subscription STS config tasks'
+          ansible.builtin.include_tasks: tasks/configure-subscription-for-sts.yml
+          vars:
+            comp_name: 'cluster-netobserv-lokistack'
+            comp_sub_name: ''
+            comp_ns: '{{ netobserv_lokistack_ns }}'
+            create_s3_and_secret: 'false'
+
+        - name: '{{ ansible_name_module }} | create  s3 secret'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} create secret generic {{ netobserv_s3_secret }} \
+              -n {{ netobserv_lokistack_ns }}  \
+              --from-literal=bucketnames={{ netobserv_s3_bucket }} \
+              --from-literal=region={{ aws_region }} \
+              --from-literal=audience=openshift \
+              --from-literal=role_arn={{ bucket_iam_role_cluster_netobserv_lokistack }} \
+              --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+          register: s3_secret_created
+
+    - name: "Run AWS bucket creation logic"
+      when: is_aws_environment | default(false) | bool
+      block:
+        - name: '{{ ansible_name_module }} | Import AWS S3 CA CM tasks'
+          ansible.builtin.include_tasks: tasks/create-ca-cm.yml
+          vars:
+            tls_ca_cm_name: '{{ cluster_logging_storage_tls_ca_cm }}'
+            tls_ca_cm_key: 'ca.crt'
+            tls_ca_cm_namespace: '{{ noo_ns }}'
+            ca_cert_endpoint: '{{ aws_s3_endpoint }}'
+
+
+    - name: '{{ ansible_name_module }} | Creat CA logging storage CM using user-ca-bundle CM'
+      ansible.builtin.include_tasks: ../roles/copy-user-ca-bundle-cm-into-new-ca-bundle/tasks/main.yml
+      vars:
+        existing_ca_bundle_cm_name: 'user-ca-bundle' ##should use trusted-ca-bundle if under CM size
+        existing_ca_bundle_cm_namespace: 'openshift-config' ## should uee openshift-config-managed if under CM size 
+        new_ca_bundle_cm_name: '{{ cluster_logging_storage_tls_ca_cm }}'
+        new_ca_bundle_cm_file: '{{ staging_dir }}/cluster-logging-storage-ca.yaml'
+        new_ca_bundle_cm_namespace: '{{ noo_ns }}'
+        new_ca_bundle_cert_key: "{{ cluster_logging_storage_tls_ca_cm_key | default('ca.crt', true) }}"
+        create_new_ca_bundle_cm: 'true'
+        update_new_ca_bundle_cm_namespace: 'true'
+      when:
+        - not is_aws_environment is defined or not is_aws_environment | bool
+      register: logging_storage_ca_cm_created
+
+   ##### Configure lokistack
+    - name: '{{ ansible_name_module }} | template | Copy lokistack CR to staging location'
+      ansible.builtin.template:
+        src: "{{ netobserv_lokistack_cr_template }}"
+        dest: "{{ cluster_observability_cr_staging_dir }}/{{ (netobserv_lokistack_cr_template | basename).split('.j2')[0] }}"
+        force: yes
+      register: lokistack_cr_rendered
+    
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | Lokistack CR rendered'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ lokistack_cr_rendered.dest }}
+      when:
+        - lokistack_cr_rendered is defined
+        - lokistack_cr_rendered.dest is defined
+        - lokistack_cr_rendered.dest != ''
+      register: lokistack_cr_applied
+
+   ##### Configure Netobserv flow CR 
+- name: '{{ ansible_name_module }} | template | Copy Netobserv flow CR to staging location'
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ cluster_observability_cr_staging_dir }}/{{ (item | basename).split('.j2')[0] }}"
+    force: yes
+  loop: "{{ netobserv_cr_templates }}"
+  register: netobserv_flow_cr_rendered
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  Netobserv flow CR rendered'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ item.dest }}
+  loop: "{{ netobserv_flow_cr_rendered.results }}"
+  when:
+    - netobserv_flow_cr_rendered is defined
+    - netobserv_flow_cr_rendered.results is defined
+    - netobserv_flow_cr_rendered.results| length > 0 
+    - item is defined
+    - item.dest is defined
+    - item.dest != '' 
+  register: netobserv_flow_cr_applied
+
+      ##### Check netobserv status 
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | flowcollector '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get flowcollector cluster 
+  ignore_errors: yes
+  register: flowcollector 
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | netobserv pods '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get pods -n {{ netobserv_cr_ns }}  
+  ignore_errors: yes
+  register: netobserv_pods
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | netobserv privileged pods '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get pods -n {{ netobserv_cr_ns }}-privileged 
+  ignore_errors: yes
+  register: netobserv_priv_pods
+
+      ##### Configure netobserv roles
+- name: '{{ ansible_name_module }} | configure loki log view cluster role for auditors'
+  when:
+    - configure_netobserv_loki_roles is defined
+    - configure_netobserv_loki_roles | bool 
+  block:
+    #### it is assumed that the groups laready exists before running this 
+    - name: '{{ ansible_name_module }} | shell: oc | Grant cluster monitoring view to auditors '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} adm policy add-cluster-role-to-group {{ cluster_monitoring_view_cr }} {{ cluster_auditors_group }} 
+      failed_when:
+        - cluster_monitoring_view_rb.stderr is defined
+        - cluster_monitoring_view_rb.stderr != "" 
+        - "not 'already exists' in cluster_monitoring_view_rb.stderr"
+      when:
+        - cluster_auditors is defined
+        - cluster_auditors | d([],true) | length > 0 
+        - cluster_auditors_group is defined
+        - cluster_auditors_group != '' 
+      register: cluster_monitoring_view_rb 
+
+    - name: '{{ ansible_name_module }} | shell: oc | Grant netobserv loki reader to groups '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} adm policy add-cluster-role-to-group {{ netobserv_loki_reader_cr }} {{ item }} 
+      loop:
+        - "{{ netobserv_loki_tenant_groups }}"
+        - "{{ cluster_auditors_group }}"
+      when:
+        - (netobserv_loki_tenant_groups is defined and netobserv_loki_tenant_groups | d([], true) | length > 0) or (cluster_auditors_group is defined and cluster_auditors_group | d([], true) | length > 0)
+      failed_when:
+        - netobserv_loki_reader_rb.stderr is defined
+        - netobserv_loki_reader_rb.stderr != "" 
+        - "not 'already exists' in netobserv_loki_reader_rb.stderr"
+      register: netobserv_loki_reader_rb 
+
+    - name: '{{ ansible_name_module }} | shell: oc | Grant netobserv loki metrics reader to groups'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} adm policy add-cluster-role-to-group {{ netobserv_loki_metrics_reader_cr }} {{ item }} 
+      loop:
+        - "{{ netobserv_loki_tenant_groups }}"
+        - "{{ cluster_auditors_group }}"
+      when:
+        - (netobserv_loki_tenant_groups is defined and netobserv_loki_tenant_groups | d([], true) | length > 0) or (cluster_auditors_group is defined and cluster_auditors_group | d([], true) | length > 0)
+      failed_when:
+        - netobserv_loki_metrics_reader_rb.stderr is defined
+        - netobserv_loki_metrics_reader_rb.stderr != "" 
+        - "not 'already exists' in netobserv_loki_metrics_reader_rb.stderr"
+      register: netobserv_loki_metrics_reader_rb 
+
+ 

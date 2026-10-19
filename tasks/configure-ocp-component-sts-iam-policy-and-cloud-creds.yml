@@ -91,9 +91,9 @@
     ### limit the role name to the first 60 character of the name passed in or set
 - name: '{{ ansible_name_module }} | set_fact | Set ocp_comp_iam_role_name'
   ansible.builtin.set_fact:
-    ocp_comp_iam_role_name: "{{ ocp_comp_iam_role_name_exp[:60] }}"
+    ocp_comp_iam_role_name: "{{ ocp_comp_iam_role_name_exp[:64] }}"
   when:
-    - not ocp_comp_iam_role_name is defined or ocp_comp_iam_role_name == "" or ocp_comp_iam_role_name | length > 60
+    - not ocp_comp_iam_role_name is defined or ocp_comp_iam_role_name == "" or ocp_comp_iam_role_name | length > 64
 
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print ocp_comp_iam_role_name'
   ansible.builtin.debug:
@@ -143,9 +143,10 @@
 
 - name: '{{ ansible_name_module }} | shell:{{ aws_cli }} | OCP Comp IAM role '
   ansible.builtin.shell: >
-    {{ aws_cli }} iam create-role --role-name {{ ocp_comp_iam_role_name }} --assume-role-policy-document file://{{ role_trust_file }}
+    {{ aws_cli }} iam create-role --role-name {{ ocp_comp_iam_role_name }} --assume-role-policy-document file://{{ role_trust_file }} --tags Key=Name,Value={{ ccoctl_manifest_tag_name }} Key=openshift.io/cloud-credential-operator/{{ ccoctl_manifest_tag_name }},Value=owned --description '{{ role_description }}'
   vars:
     role_trust_file: "{{ ocp_comp_sts_trust_policy_doc_file_rendered.dest }}"
+    role_description: "{{  'OpenShift role for ' + cluster_name + '  ' + (ocp_comp_iam_role_name | replace('-', ' ')) }}"
   failed_when:
     - ocp_comp_iam_role_created.rc is defined
     - ocp_comp_iam_role_created.rc > 0 
@@ -174,6 +175,11 @@
     - create_aws_cloud_creds_secret is defined
     - create_aws_cloud_creds_secret | bool 
   block:
+    - name: '{{ ansible_name_module }} | import namespace creation tass'
+      ansible.builtin.include_tasks: tasks/create-namespace.yml
+      vars:
+        ns_to_create: '{{ ocp_comp_ns }}'
+
     - name: '{{ ansible_name_module }} | Render ocp comp aws cloud creds into place'
       ansible.builtin.template:
         src: "templates/openshift-comp-aws-cloud-credential-secret.yaml.j2"
@@ -203,6 +209,11 @@
     - create_aws_cloud_creds_sa is defined
     - create_aws_cloud_creds_sa | bool 
   block:
+    - name: '{{ ansible_name_module }} | import namespace creation tass'
+      ansible.builtin.include_tasks: tasks/create-namespace.yml
+      vars:
+        ns_to_create: '{{ ocp_comp_ns }}'
+
     - name: '{{ ansible_name_module }} | Render ocp comp aws cloud creds SAs into place'
       ansible.builtin.template:
         src: "templates/openshift-comp-aws-sts-sa.yaml.j2"

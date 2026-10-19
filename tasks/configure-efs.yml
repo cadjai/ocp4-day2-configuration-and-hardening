@@ -1,0 +1,190 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.set_fact | set operator structure'
+  ansible.builtin.set_fact:
+   efs_operator: "{{ default_operators_to_deploy['aws-efs-csi-driver-operator'] }}"
+   efs_ns: "{{ default_operators_to_deploy['aws-efs-csi-driver-operator'].deploy_namespace }}"
+   efs_operator_name: "aws-efs-csi-driver-operator"
+
+- name: '{{ ansible_name_module }} | Ensure EFS operator is  installed '
+  ansible.builtin.include_tasks: tasks/ensure-efs-operator-is-installed.yml
+
+- name: '{{ ansible_name_module }} | Retrieve og and sub for tempo'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get sub,og,csv -n  {{ efs_ns }} --no-headers | awk '{print $1}' | cut -d '/' -f 2
+  ignore_errors: true
+  register: efs_install_manifests
+
+- name: '{{ ansible_name_module }} | import namespace creation tass'
+  ansible.builtin.include_tasks: tasks/create-namespace.yml
+  vars:
+    ns_to_create: "{{ efs_ns }}"
+
+##### Apply this when usng STS
+- name: '{{ ansible_name_module }} | Apply STS config '
+  when:
+    - use_sts_creds is defined
+    - use_sts_creds | bool
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | efs_iam_role_name '
+      ansible.builtin.set_fact:
+        efs_iam_role_name: "{{ (cluster_name + '-openshift-' + efs_s3_role_name)[:64] }}"
+      when:
+        - not efs_iam_role_name is defined or efs_iam_role_name == ""
+      vars:
+        efs_s3_role_name: "{{ ocp_comp_sts_to_configure['openshift-aws-efs-csi-driver'].name }}"
+
+    - name: '{{ ansible_name_module }} | shell:aws | retrieve EFS aws iam roles '
+      ansible.builtin.shell: >
+        {{ aws_cli }} iam get-role --role-name  {{ efs_iam_role_name }} --region {{ aws_region }} --query 'Role.Arn' --output text
+      when:
+        - not efs_iam_role_arn is defined or efs_iam_role_arn == ""
+      register: efs_iam_role_arn_out
+
+    - name: '{{ ansible_name_module }} | set_fact | efs_iam_role_arn '
+      ansible.builtin.set_fact:
+        efs_iam_role_arn: '{{ efs_iam_role_arn_out.stdout | trim }}'
+      when:
+        - efs_iam_role_arn_out is defined
+        - efs_iam_role_arn_out.rc is defined
+        - efs_iam_role_arn_out.rc == 0
+        - efs_iam_role_arn_out.stdout is defined
+        - efs_iam_role_arn_out.stdout != ""
+
+    - name: '{{ ansible_name_module }} | Retrieve existing distributed tracing subscription '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get subscription.operators.coreos.com -n {{ efs_ns }}  --no-headers | awk '{print $1}'
+      register: efs_op_sub_out
+
+    - name: '{{ ansible_name_module }} | Patch distributed tracing subscription '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} patch subscription.operators.coreos.com {{ efs_op_sub_out.stdout }} -n {{ efs_ns }}  --type='merge' -p '{"spec": {"config": {"env": [{"name": "ROLEARN", "value": "'"{{ efs_iam_role_arn }}"'"}]}}}'
+      when:
+        - efs_op_sub_out is defined
+        - efs_op_sub_out.rc is defined
+        - efs_op_sub_out.rc == 0
+        - efs_op_sub_out.stdout is defined
+        - efs_op_sub_out.stdout != ""
+      register: efs_op_sub_patched
+
+    - name: '{{ ansible_name_module }} | Configure One Zone file system with STS '
+      when:
+        - config_one_zone_efs_fs is defined
+        - config_one_zone_efs_fs | bool 
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | efs_iam_role_name '
+          ansible.builtin.set_fact:
+            efs_node_iam_role_name: "{{ (cluster_name + '-openshift-' + efs_node_s3_role_name)[:64] }}"
+          when:
+            - not efs_node_iam_role_name is defined or efs_node_iam_role_name == ""
+          vars:
+            efs_node_s3_role_name: "{{ ocp_comp_sts_to_configure['openshift-aws-efs-csi-driver-node'].name }}"
+
+        - name: '{{ ansible_name_module }} | shell:aws | retrieve EFS aws iam roles '
+          ansible.builtin.shell: >
+            {{ aws_cli }} iam get-role --role-name {{ efs_node_iam_role_name }} --region {{ aws_region }} --query 'Role.Arn' --output text
+          when:
+            - not efs_node_iam_role_arn is defined or efs_node_iam_role_arn == ""
+          register: efs_node_iam_role_arn_out
+
+        - name: '{{ ansible_name_module }} | set_fact | efs_node_iam_role_arn '
+          ansible.builtin.set_fact:
+            efs_node_iam_role_arn: '{{ efs_node_iam_role_arn_out.stdout | trim }}'
+          when:
+            - efs_node_iam_role_arn_out is defined
+            - efs_node_iam_role_arn_out.rc is defined
+            - efs_node_iam_role_arn_out.rc == 0
+            - efs_node_iam_role_arn_out.stdout is defined
+            - efs_node_iam_role_arn_out.stdout != ""
+
+        #- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the staging dir exist '
+        #  ansible.builtin.file:
+        #    path: "{{ item }}"
+        #    state: directory
+        #    mode: 0777
+        #  loop:
+        #    - "{{ ocp_comp_ccoctl_sts_policy_docs_file_dir }}"
+
+        #- name: '{{ ansible_name_module }} | Render One Zone aws cloud creds into place'
+        #  ansible.builtin.template:
+        #    src: "templates/openshift-aws-efs-cloud-credential-one-zone-iam-cloudcred-cr.yaml.j2"
+        #    dest: "{{ ocp_comp_sts_policy_docs_file_dir }}/{{ one_zone_cloud_cred_name }}-aws-efs-cloud-credential-one-zone-iam-cloudcred-cr.yaml"
+        #    owner: "{{ local_user }}"
+        #    group: "{{ local_user }}"
+        #    mode: '0655'
+        #  register: one_zone_cloud_cred_rendered
+
+        #- name: '{{ ansible_name_module }} | Apply ocp comp aws cloud creds'
+        #  ansible.builtin.command: >
+        #    {{ openshift_cli }} apply -f {{ one_zone_cloud_cred_rendered.dest }}
+        #  when:
+        #    - one_zone_cloud_cred_rendered is defined
+        #    - one_zone_cloud_cred_rendered.dest is defined
+        #    - one_zone_cloud_cred_rendered.dest != ""
+        #  register: one_zone_cloud_cred_applied
+
+        - name: '{{ ansible_name_module }} | Patch distributed tracing subscription '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} patch subscription.operators.coreos.com {{ efs_op_sub_out.stdout }} -n {{ efs_ns }}  --type='merge' -p '{"spec": {"config": {"env": [{"name": "NODE_ROLEARN", "value": "'"{{ efs_node_iam_role_arn }}"'"}]}}}'
+          when:
+            - one_zone_cloud_cred_applied is defined
+            - one_zone_cloud_cred_applied.rc is defined
+            - one_zone_cloud_cred_applied.rc == 0 
+
+- name: '{{ ansible_name_module }} | Validate that the cloud credential secret exists '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get secret -n  {{ efs_ns }}  | grep -i efs || true
+  register: efs_secret_out
+
+- name: '{{ ansible_name_module }} | template | Render EFS CSI Driver CR to staging location'
+  ansible.builtin.template:
+    src: "templates/openshift-aws-efs-cluster-csidriver.yaml.j2"
+    dest: "{{ staging_dir }}/{{ cluster_name }}-openshift-aws-efs-cluster-csidriver.yaml"
+    force: yes
+  register: efs_cr_rendered
+
+- name: '{{ ansible_name_module }} | Apply EFS Config CR '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} apply -f  {{ efs_cr_rendered.dest }} 
+  when:
+    - efs_cr_rendered is defined
+    - efs_cr_rendered.dest is defined
+    - efs_cr_rendered.dest != '' 
+  register: efs_cr_applied 
+
+- name: '{{ ansible_name_module }} | wait_for | wait for instance conponents to be created'
+  ansible.builtin.wait_for:
+    timeout: 120
+  delegate_to: localhost
+
+- name: '{{ ansible_name_module }} | Validate that the EFS pods are running '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pods -n  {{ efs_ns }}  | grep -i efs || true
+  register: efs_po_out
+
+- name: '{{ ansible_name_module }} | Validate that the EFS drivers are ready '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get clustercsidriver efs.csi.aws.com -o json \
+      | jq -r '
+      .status.conditions[]
+        | select(.type == "AWSEFSDriverNodeServiceControllerAvailable" or .type == "AWSEFSDriverControllerServiceControllerAvailable")
+          | [.type, .status, .reason, .message]
+            | @tsv'
+  register: efs_driver_out
+
+- name: '{{ ansible_name_module }} | include_tasks | Import EFS FS creation tasks'
+  ansible.builtin.include_tasks: tasks/create-aws-efs-fs.yml
+  when:
+    - create_aws_efs_fs is defined
+    - create_aws_efs_fs | bool 
+
+- name: '{{ ansible_name_module }} | include_tasks | Import EFS FS SC creation tasks'
+  ansible.builtin.include_tasks: tasks/create-aws-efs-storageclass.yml
+  when:
+    - create_aws_efs_storageclass is defined
+    - create_aws_efs_storageclass | bool 
+
+- name: '{{ ansible_name_module }} | include_tasks | Import EFS FS SG Config tasks'
+  ansible.builtin.include_tasks: tasks/configure-aws-efs-security-group.yml
+  when:
+    - configure_aws_efs_sg is defined
+    - configure_aws_efs_sg | bool 

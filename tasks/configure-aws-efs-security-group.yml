@@ -1,0 +1,79 @@
+---
+- name: '{{ ansible_name_module }} | Set aws_cluster_cidr'
+  ansible.builtin.set_fact:
+    aws_cluster_cidr: "{{ aws_cluster_private_cidr_blocks[0] }}"
+
+- name: '{{ ansible_name_module }} | shell:aws | Retrieve cluster cidr '
+  ansible.builtin.shell: >
+    {{ aws_cli }} ec2 describe-vpcs  --filters "Name=vpc-id,Values={{ aws_vpc_id }}" --query 'Vpcs[*].CidrBlock'  | jq -r '.[0]' 
+  when:
+    - not aws_cluster_cidr is defined or aws_cluster_cidr == ''
+  register: aws_cluster_cidr_out
+
+- name: '{{ ansible_name_module }} | Set aws_cluster_cidr'
+  ansible.builtin.set_fact:
+    aws_cluster_cidr: "{{ aws_cluster_cidr_out.stdout }}"
+  when:
+    - aws_cluster_cidr_out is defined
+    - aws_cluster_cidr_out.stdout is defined
+    - aws_cluster_cidr_out.stdout != '' 
+
+- name: '{{ ansible_name_module }} | include_tasks | Import EFS FS validation tasks'
+  ansible.builtin.include_tasks: tasks/validate-aws-efs-fs.yml
+
+- name: '{{ ansible_name_module }} | Retrieve AWS worker SG ID '
+  ansible.builtin.shell: >
+    {{ aws_cli }}  ec2 describe-security-groups --filters Name=tag:Name,Values={{ worker_sg_name }} --query "SecurityGroups[*].GroupId" | jq .[]
+  register: aws_sg_id_out
+
+- name: '{{ ansible_name_module }} | Set aws_worker_sg_id'
+  ansible.builtin.set_fact:
+    aws_worker_sg_id: "{{ aws_sg_id_out.stdout }}"
+  when:
+    - aws_sg_id_out is defined
+    - aws_sg_id_out.stdout is defined
+    - aws_sg_id_out.stdout != '' 
+
+- name: '{{ ansible_name_module }} | assert | the aws_worker_sg_id  is defined'
+  ansible.builtin.assert:
+    that:
+      - aws_worker_sg_id is defined
+      - aws_worker_sg_id != ''
+    msg: "The aws_worker_sg_id is required "
+
+- name: '{{ ansible_name_module }} | Update AWS EF FS share target mount '
+  ansible.builtin.shell: >
+    {{ aws_cli }} ec2 authorize-security-group-ingress --group-id {{ aws_worker_sg_id }}  --protocol tcp --port 2040 --cidr {{ aws_cluster_cidr }} --region {{ aws_region }} 
+  failed_when: 
+    - cluster_sg_updated_aws_efs.rc != 0
+    - "'InvalidPermission.Duplicate' not in cluster_sg_updated_aws_efs.stderr"
+  register: cluster_sg_updated_aws_efs
+
+#- name: '{{ ansible_name_module }} | Add AWS EF FS ingress rule to security group'
+#  amazon.aws.ec2_security_group:
+#    id: "{{ aws_worker_sg_id }}"
+#    region: "{{ aws_region }}"
+#    rules:
+#      - proto: tcp
+#        from_port: 2040
+#        to_port: 2040
+#        cidr_ip: "{{ aws_cluster_cidr }}" 
+#  register: cluster_sg_updated_aws_efs
+
+- name: '{{ ansible_name_module }} | Update AWS EF FS share target mount '
+  ansible.builtin.shell: >
+    {{ aws_cli }} efs create-mount-target --region {{ aws_region }} --file-system-id {{ aws_efs_fs_id }} --subnet-id {{ item }} --security-groups {{ aws_worker_sg_id }}
+  loop: "{{ aws_private_vpc_subnet_id_list }}"
+  failed_when:
+    - efs_fs_mount_target_updated.rc is defined
+    - efs_fs_mount_target_updated.rc > 1 
+    - efs_fs_mount_target_updated.stderr is defined 
+    - efs_fs_mount_target_updated.stderr  != '' 
+    - "not 'already exists in' in efs_fs_mount_target_updated.stderr" 
+  register: efs_fs_mount_target_updated
+
+- name: '{{ ansible_name_module }} | Retrieve AWS EF FS share target mount '
+  ansible.builtin.shell: >
+    {{ aws_cli }} efs describe-mount-targets --file-system-id {{ aws_efs_fs_id }}  --region {{ aws_region }} --query 'MountTargets[*].{MountTargetId:MountTargetId,SubnetId:SubnetId,State:LifeCycleState,IpAddress:IpAddress}' --output table 
+  register: aws_efs_mount_targets_out
+

@@ -1,0 +1,214 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | tempo NS '
+  ansible.builtin.set_fact:
+    tempo_ns: "{{ observability_operators['tempo_product'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | Ensure Cluster Observability Operators are installed '
+  ansible.builtin.include_tasks: tasks/ensure-clusterlogging-operators-are-installed.yml
+  vars:
+    observability_ns: "{{ observability_operators['cluster_logging'].deploy_namespace }}"
+    coo_ns: "{{ observability_operators['cluster_observability_operator'].deploy_namespace }}"
+    tempo_ns: "{{ observability_operators['tempo_product'].deploy_namespace }}"
+
+- name: '{{ ansible_name_module }} | set_fact | set staging dir fact'
+  ansible.builtin.set_fact:
+    cluster_observability_cr_staging_dir: "{{ staging_dir | d('/tmp', true) }}"
+  when:
+    - not cluster_observability_cr_staging_dir is defined or cluster_observability_cr_staging_dir == ''
+
+- name: '{{ ansible_name_module }} | Retrieve default value from existing storage classes'
+  ansible.builtin.include_tasks: tasks/retrieve-default-sc.yml
+
+- name: '{{ ansible_name_module }} | Retrieve og and sub for tempo'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get sub,og,csv -n  {{ tempo_ns }} --no-headers | awk '{print $1}' | cut -d '/' -f 2
+  ignore_errors: true
+  register: tempo_install_manifests
+
+   ##### Configure tempo S3 secret 
+- name: '{{ ansible_name_module }} | set_fact | extracted_cred_dir '
+  ansible.builtin.set_fact:
+    extracted_cred_dir: '{{ staging_dir }}/extraction'
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | create cred extraction dir'
+  ansible.builtin.file:
+    path: "{{ extracted_cred_dir }}"
+    state: directory
+    mode: 0777
+
+- name: '{{ ansible_name_module }} | import namespace creation tass'
+  ansible.builtin.include_tasks: tasks/create-namespace.yml
+  vars:
+    ns_to_create: "{{ tempostack_cr_ns }}"
+
+##### Apply this when usng STS
+    ### temporary workaround for iso region based on Red Access portal KB 
+    #### https://access.redhat.com/solutions/7146472
+- name: '{{ ansible_name_module }} | Apply STS config '
+  when:
+    - use_sts_creds is defined
+    - use_sts_creds | bool 
+    - aws_region is defined  
+    - aws_region != ''  
+    - "not 'iso' in aws_region" 
+  block:
+    - name: '{{ ansible_name_module }} | include_tasks | Import subscription STS config tasks'
+      ansible.builtin.include_tasks: tasks/configure-subscription-for-sts.yml
+      vars:
+        comp_name: 'tempo-s3-sts'
+        comp_sub_name: ''
+        comp_ns: '{{ tempo_ns }}'
+        create_s3_and_secret: 'true'
+        comp_s3_bucket: '{{ tempostack_s3_bucket }}'
+        comp_s3_secret: '{{ tempostack_s3_secret }}'
+        comp_cr_ns: '{{ tempostack_cr_ns }}'
+        comp_s3_bucket_secret_key: 'bucket'
+
+- name: '{{ ansible_name_module }} | S3 long live secret config '
+  when:
+    - not use_sts_creds is defined or not use_sts_creds | bool or (use_sts_creds | bool and aws_region is defined and aws_region != '' and 'iso' in aws_region) 
+  block:
+    - name: '{{ ansible_name_module }} | include_tasks | Import s3 bucket creation tasks'
+      ansible.builtin.include_tasks: tasks/create-s3-bucket.yml
+      vars:
+        bucket_name: "{{ tempostack_s3_bucket }}" 
+        bucket_namespace: "{{ tempostack_cr_ns }}" 
+
+    - name: '{{ ansible_name_module }} | Update Existing s3 secret'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} create secret generic {{ tempostack_s3_secret }} \
+          -n {{ tempostack_cr_ns }}  \
+          --from-literal=access_key_id={{ tempostack_aws_access_key }}\
+          --from-literal=access_key_secret={{ tempostack_aws_access_secret }} \
+          --from-literal=bucket={{ tempostack_s3_bucket }} \
+          --from-literal=endpoint={{ tempostack_aws_s3_endpoint }} \
+          --dry-run=client -o yaml | {{ openshift_cli }} replace -f - --force
+      vars:
+        tempostack_aws_access_key: "{{ odf_bucket_access_key if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_access_key is defined and odf_bucket_access_key != '' else aws_access_key }}"
+        tempostack_aws_access_secret: "{{ odf_bucket_access_secret if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_access_secret is defined and odf_bucket_access_secret != '' else aws_access_secret }}"
+        tempostack_aws_s3_endpoint: "{{ odf_bucket_endpoint if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_endpoint is defined and odf_bucket_endpoint != '' else aws_access_secret }}"
+        tempostack_aws_region: "{{ odf_bucket_region if (not is_aws_environment or not is_aws_environment | bool) and odf_bucket_region is defined and odf_bucket_region != '' else aws_region }}"
+
+      register: pull_secret_created
+      no_log: true
+
+- name: "Run AWS bucket creation logic"
+  when: is_aws_environment | default(false) | bool
+  block:
+    - name: '{{ ansible_name_module }} | Import AWS S3 CA CM tasks'
+      ansible.builtin.include_tasks: tasks/create-aws-s3-cm.yml
+      vars:
+        s3_bucket_tls_ca_cm: '{{ tempostack_s3_ca_cm }}'
+        s3_bucket_tls_ca_cm_key: 'service-ca.crt'
+        bucket_namespace: '{{ tempostack_cr_ns }}'
+
+- name: '{{ ansible_name_module }} | Creat CA logging storage CM using user-ca-bundle CM'
+  ansible.builtin.include_tasks: ../roles/copy-user-ca-bundle-cm-into-new-ca-bundle/tasks/main.yml
+  vars:
+    existing_ca_bundle_cm_name: 'user-ca-bundle' ##should use trusted-ca-bundle if under CM size
+    existing_ca_bundle_cm_namespace: 'openshift-config' ## should uee openshift-config-managed if under CM size
+    new_ca_bundle_cm_name: '{{ tempostack_s3_ca_cm }}'
+    new_ca_bundle_cm_file: '{{ staging_dir }}/cluster-logging-storage-ca.yaml'
+    new_ca_bundle_cm_namespace: '{{ tempostack_cr_ns }}'
+    new_ca_bundle_cert_key: "{{ service-ca.crt }}"
+    create_new_ca_bundle_cm: 'true'
+    update_new_ca_bundle_cm_namespace: 'true'
+  when:
+    - not is_aws_environment is defined or not is_aws_environment | bool
+  register: tempostack_s3_ca_cm_created
+
+   ##### Configure tempo RBAC 
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  tempo RBAC'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ tempostack_rbac_template }}
+  register: tempo_rbac_rendered
+
+   ##### Configure tempo CR 
+- name: '{{ ansible_name_module }} | template | Copy tempo CR to staging location'
+  ansible.builtin.template:
+    src: "{{ tempostack_cr_template }}"
+    dest: "{{ cluster_observability_cr_staging_dir }}/{{ (tempostack_cr_template | basename).split('.j2')[0] }}"
+    force: yes
+  register: tempo_cr_rendered
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  tempo CR rendered'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ tempo_cr_rendered.dest }}
+  when:
+    - tempo_cr_rendered is defined
+    - tempo_cr_rendered.dest is defined
+    - tempo_cr_rendered.dest != '' 
+  register: tempo_cr_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 90
+  delegate_to: localhost
+
+  #### when running on STS enable AWS tempostack has these bugs tat are being actively worked. 
+  #### https://redhat.atlassian.net/browse/TRACING-5571
+  #### https://redhat.atlassian.net/browse/TRACING-5887
+  #### the following is a workaround for them.
+  ### temporary workaround for iso region based on Red Access portal KB 
+  #### https://access.redhat.com/solutions/7146472
+- name: '{{ ansible_name_module }} | Apply STS workaround for tempostack due the folowing bugs'
+  when:
+    - use_sts_creds is defined
+    - use_sts_creds | bool
+    - apply_tempo_sts_bugs_workaround is defined
+    - apply_tempo_sts_bugs_workaround | bool 
+    - aws_region is defined  
+    - aws_region != ''  
+    - "not 'iso' in aws_region" 
+  block:
+    - name: '{{ ansible_name_module }} | Retrieve existing tempostack CR '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get tempostack -n {{ tempostack_cr_ns }}  --no-headers | awk '{print $1}'
+      register: tempo_cr_out
+
+    - name: '{{ ansible_name_module }} | Patch existing tempostack CR '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} patch tempostack {{ tempo_cr_out.stdout }} -n {{ tempostack_cr_ns }}  --type='merge' -p '{"spec": {"managementState": "Unmanaged"}}' 
+      when:
+        - tempo_cr_out is defined
+        - tempo_cr_out.rc is defined
+        - tempo_cr_out.rc == 0 
+        - tempo_cr_out.stdout is defined
+        - tempo_cr_out.stdout != "" 
+      register: tempo_cr_patched
+
+    - name: '{{ ansible_name_module }} | Retrieve existing tempostack deployments '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get deployment -n {{ tempostack_cr_ns }}  --no-headers | awk '{print $1}'
+      register: tempo_deployments_out
+
+    - name: '{{ ansible_name_module }} | Patch tempostack deployments '
+      ansible.builtin.shell: | 
+        {{ openshift_cli }} patch deployment {{ item }} -n {{ tempostack_cr_ns }}  --type='json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "AWS_DEFAULT_REGION", "value": "{{ aws_region }}"}}, {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "AWS_REGION", "value": "{{ aws_region }}"}}]' 
+      loop: "{{ tempo_deployments_out.stdout_lines }}"
+      when:
+        - tempo_deployments_out is defined
+        - tempo_deployments_out.rc is defined
+        - tempo_deployments_out.rc == 0 
+        - tempo_deployments_out.stdout_lines is defined
+        - tempo_deployments_out.stdout_lines | length > 0 
+        - item is defined
+        - item != ""
+        - not item in ["tempo-simple-ts-distributor","tempo-simple-ts-gateway"]
+
+    - name: '{{ ansible_name_module }} | Retrieve existing tempostack statefulsets '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get statefulset -n {{ tempostack_cr_ns }}  --no-headers | awk '{print $1}'
+      register: tempo_statefulsets_out
+
+    - name: '{{ ansible_name_module }} | Patch tempostack statefulsets '
+      ansible.builtin.shell: | 
+        {{ openshift_cli }} patch statefulset {{ item }} -n {{ tempostack_cr_ns }}  --type='json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "AWS_DEFAULT_REGION", "value": "{{ aws_region }}"}}, {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "AWS_REGION", "value": "{{ aws_region }}"}}]' 
+      loop: "{{ tempo_statefulsets_out.stdout_lines }}"
+      when:
+        - tempo_statefulsets_out is defined
+        - tempo_statefulsets_out.rc is defined
+        - tempo_statefulsets_out.rc == 0 
+        - tempo_statefulsets_out.stdout_lines is defined
+        - tempo_statefulsets_out.stdout_lines | length > 0 
+
